@@ -1,0 +1,4 @@
+Frontend = netlify
+Code = google aistudio
+Conversion of code = node.js
+Backend/Server Side = Firebase

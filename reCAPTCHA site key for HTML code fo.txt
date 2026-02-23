@@ -1,0 +1,3 @@
+reCAPTCHA site key for HTML code for server site 6LdCkyssAAAAAGVwl0nt6A8LfG1Pygt_WTKv8TMb
+
+Secret key for communication between your site and reCAPTCHA 6LdCkyssAAAAAGZ9XH6dl6MmVotDh3_GEJPkANos

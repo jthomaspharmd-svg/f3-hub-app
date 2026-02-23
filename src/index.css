@@ -1,0 +1,26 @@
+/* -----------------------------------------
+   Minimal global CSS (NO build-time Tailwind)
+------------------------------------------ */
+
+/* Keep fonts sane and consistent */
+:root {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Allow the app to fill the viewport */
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+/* Ensure React root can grow naturally */
+#root {
+  min-height: 100%;
+}

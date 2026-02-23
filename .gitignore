@@ -1,0 +1,11 @@
+.secrets/
+*.local.env
+.env
+.env.*
+node_modules/
+dist/
+Backups/
+serviceAccountKey.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
