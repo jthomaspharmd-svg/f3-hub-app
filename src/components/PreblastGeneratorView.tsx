@@ -36,6 +36,11 @@ const formatDateLong = (d: Date) => {
   return `${weekday}, ${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
 };
 
+const stripWeekdayFromDate = (value: string) => {
+  const trimmed = String(value || "").trim();
+  return trimmed.replace(/^[A-Za-z]+,\s*/, "");
+};
+
 const toIsoDate = (longDateStr: string): string => {
   const parsed = new Date(longDateStr);
   if (Number.isNaN(parsed.getTime())) return "";
@@ -60,6 +65,12 @@ const EMOJI_ROTATION = {
   q: ["💪", "🏋️", "🧑‍💪", "🧭", "🛡️"],
   bring: ["🎒", "🧳", "🧢", "🧤", "🧃"],
 };
+const LABEL_STYLE_ROTATION = [
+  "plain",
+  "plain",
+  "dash",
+] as const;
+type LabelStyle = (typeof LABEL_STYLE_ROTATION)[number];
 
 const hashSeed = (seed: string) => {
   let h = 0;
@@ -76,17 +87,31 @@ const pickFrom = (options: string[], seed: string, salt: string) => {
   return options[idx];
 };
 
-const buildDdTdBlock = (seed: string) => {
-  const variants = [
-    "DD/TD — drop it in comments",
-    "DD — comment below\nTD — comment below",
-    "DD — Comment Below\nTD - Comment Below",
-    "DD (Comment Below)\nTD (Comment Below)",
-    "DD/TD - Drop it in the comments",
-    "DD — comment below\n\nTD — comment below",
-  ];
-  return pickFrom(variants, seed, "ddtd");
+const pickLabelStyle = (seed: string): LabelStyle =>
+  (pickFrom([...LABEL_STYLE_ROTATION], seed, "label-style") as LabelStyle) ||
+  "plain";
+
+const formatStyledLabel = (label: string, style: LabelStyle) => {
+  const core = label.replace(/:\s*$/, "");
+  if (style === "dash") return `${core} -`;
+  return `${core}:`;
 };
+
+const buildStyledFieldLine = (
+  prefix: string,
+  label: string,
+  value: string,
+  style: LabelStyle
+) => `${prefix}${formatStyledLabel(label, style)} ${value}`;
+
+const pickBringLabel = (seed: string) =>
+  pickFrom(["Bring", "Bring", "What to Bring"], seed, "bring-label") || "Bring";
+
+const buildDdTdBlock = (style: LabelStyle) =>
+  [
+    buildStyledFieldLine("", "DD:", "Comment Below", style),
+    buildStyledFieldLine("", "TD:", "Comment Below", style),
+  ].join("\n");
 
 const escapeRegExp = (value: string) =>
   String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -172,105 +197,6 @@ const parseWorkoutDateToIso = (workoutDate: string): string => {
   const dd = m[2].padStart(2, "0");
   const yyyy = m[3].length === 2 ? `20${m[3]}` : m[3];
   return `${yyyy}-${mm}-${dd}`;
-};
-
-const mapWeatherCode = (code: number): string => {
-  if (code === 0) return "clear";
-  if (code === 1 || code === 2) return "mostly clear";
-  if (code === 3) return "cloudy";
-  if (code === 45 || code === 48) return "fog";
-  if (code === 51 || code === 53 || code === 55) return "drizzle";
-  if (code === 61 || code === 63 || code === 65) return "rain";
-  if (code === 71 || code === 73 || code === 75) return "snow";
-  if (code === 80 || code === 81 || code === 82) return "showers";
-  if (code === 95 || code === 96 || code === 99) return "thunderstorms";
-  return "mixed conditions";
-};
-
-const fetchWeatherSummary = async (
-  locations: string[],
-  workoutDate: string,
-  workoutTime: string
-) => {
-  const dateIso = parseWorkoutDateToIso(workoutDate);
-  const times = parseTimeRangeTo24(workoutTime);
-  if (!dateIso || !times.start || !times.end) return "";
-  const today = new Date();
-  const maxForecast = new Date();
-  maxForecast.setDate(today.getDate() + 16);
-  const targetDate = new Date(`${dateIso}T00:00:00`);
-  if (Number.isNaN(targetDate.getTime()) || targetDate > maxForecast) return "";
-
-  const candidates = locations.map((l) => String(l || "").trim()).filter(Boolean);
-  const zipMatch = candidates.join(" ").match(/\b\d{5}\b/);
-  const zip = zipMatch ? zipMatch[0] : "";
-  if (zip && !candidates.includes(zip)) candidates.splice(1, 0, zip);
-  if (!candidates.length) return "";
-
-  let latitude: number | null = null;
-  let longitude: number | null = null;
-
-  for (const loc of candidates) {
-    const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
-      loc
-    )}&count=1&language=en&format=json`;
-    const geoRes = await fetch(geocodeUrl);
-    if (!geoRes.ok) continue;
-    const geoJson = await geoRes.json();
-    const place = geoJson?.results?.[0];
-    if (place?.latitude && place?.longitude) {
-      latitude = place.latitude;
-      longitude = place.longitude;
-      break;
-    }
-  }
-
-  if (latitude == null || longitude == null) return "";
-
-  const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=temperature_2m,weathercode,precipitation_probability&temperature_unit=fahrenheit&timezone=auto&start_date=${dateIso}&end_date=${dateIso}`;
-  const weatherRes = await fetch(forecastUrl);
-  if (!weatherRes.ok) return "";
-  const weatherJson = await weatherRes.json();
-  const hourly = weatherJson?.hourly;
-  if (!hourly?.time?.length) return "";
-
-  const startTs = new Date(`${dateIso}T${times.start}`).getTime();
-  const endTs = new Date(`${dateIso}T${times.end}`).getTime();
-  const idxs: number[] = [];
-  for (let i = 0; i < hourly.time.length; i++) {
-    const t = new Date(hourly.time[i]).getTime();
-    if (t >= startTs && t <= endTs) idxs.push(i);
-  }
-  if (!idxs.length) return "";
-
-  const temps = idxs.map((i) => hourly.temperature_2m?.[i]).filter((v: any) => v != null);
-  const precip = idxs
-    .map((i) => hourly.precipitation_probability?.[i])
-    .filter((v: any) => v != null);
-  const codes = idxs.map((i) => hourly.weathercode?.[i]).filter((v: any) => v != null);
-
-  const avgTemp =
-    temps.length > 0 ? Math.round(temps.reduce((a: number, b: number) => a + b, 0) / temps.length) : null;
-  const avgPrecip =
-    precip.length > 0 ? Math.round(precip.reduce((a: number, b: number) => a + b, 0) / precip.length) : null;
-  const desc = codes.length > 0 ? mapWeatherCode(codes[0]) : "";
-
-  const parts: string[] = [];
-  if (avgTemp != null) parts.push(`${avgTemp}°F`);
-  if (avgPrecip != null) parts.push(`${avgPrecip}% precip`);
-  if (desc) parts.push(desc);
-
-  return parts.length ? parts.join(", ") : "";
-};
-
-const buildWeatherIntroLine = (summary: string): string => {
-  const tempMatch = summary.match(/(-?\d+)\s*°?F/i);
-  const temp = tempMatch ? `${tempMatch[1]}°F` : "";
-  const parts = summary.split(",").map((p) => p.trim());
-  const condition = parts.find((p) => p && !/°F/i.test(p) && !/%/.test(p)) || "";
-  if (!temp && !condition) return "";
-  const main = [temp, condition].filter(Boolean).join(" and ");
-  return `The forecast is showing ${main}.`;
 };
 
 /* -------------------------------------------------
@@ -428,44 +354,45 @@ const isJurassicParkAo = (ao: {
 const normalizeAiPreblast = (
   raw: string,
   address: string,
-  weatherSummary: string,
   styleSeed: string,
   useEmojis: boolean
 ): string => {
   const text = String(raw || "").replace(/\r\n/g, "\n");
+  const labelStyle = pickLabelStyle(styleSeed);
+  const bringLabel = pickBringLabel(styleSeed);
   // Most common variant you showed:
   let out = text.replace(/📍\s*WHERE\s*:/gi, "📍Where:");
   // A couple defensive extras:
   out = out.replace(/^\s*WHERE\s*:/gim, "Where:");
   // Normalize BRING label + add a blank line before it after TD.
   out = out.replace(/🎒\s*BRING\s*:/gi, "🎒 Bring:");
-  out = out.replace(/DD\s*\(\s*comment\s*below\s*\)/gi, "DD (Comment Below)");
-  out = out.replace(/TD\s*\(\s*comment\s*below\s*\)/gi, "TD (Comment Below)");
-  out = out.replace(/TD\s*\(\s*Comment\s*Below\s*\)/gi, "TD (Comment Below)");
-  out = out.replace(/TD\s*\(Comment Below\)\s*\n\s*🎒/gi, "TD (Comment Below)\n\n🎒");
-  out = out.replace(/TD\s*\(Comment Below\)\s*\n\s*Bring\s*:/gi, "TD (Comment Below)\n\nBring:");
-  out = out.replace(/TD\s*\(Comment Below\)\s*\n+/gi, "TD (Comment Below)\n\n");
-  out = out.replace(/TD\s*\(Comment Below\)\s*Bring\s*:/gi, "TD (Comment Below)\n\nBring:");
+  out = out.replace(/^\s*DD\s*(?:\(|:|-|—)?\s*(?:Drop It in the Comments|Drop it in comments|Comment Below)\)?\s*$/gim, "DD: Comment Below");
+  out = out.replace(/^\s*TD\s*(?:\(|:|-|—)?\s*(?:Drop It in the Comments|Drop it in comments|Comment Below)\)?\s*$/gim, "TD: Comment Below");
+  out = out.replace(/^\s*DD\/TD\s*(?:-|—|:)\s*Drop It in the Comments\s*$/gim, "DD: Comment Below\nTD: Comment Below");
+  out = out.replace(/TD:\s*Comment Below\s*\n\s*🎒/gi, "TD: Comment Below\n\n🎒");
+  out = out.replace(/TD:\s*Comment Below\s*\n\s*Bring\s*:/gi, "TD: Comment Below\n\nBring:");
+  out = out.replace(/TD:\s*Comment Below\s*\n+/gi, "TD: Comment Below\n\n");
+  out = out.replace(/TD:\s*Comment Below\s*Bring\s*:/gi, "TD: Comment Below\n\nBring:");
   out = out.replace(
-    /TD\s*\(Comment Below\)\s*\n*(\S)/gi,
-    "TD (Comment Below)\n\n$1"
+    /TD:\s*Comment Below\s*\n*(\S)/gi,
+    "TD: Comment Below\n\n$1"
   );
   out = out.replace(
-    /TD\s*\(Comment Below\)\s*(Bring\s*:)/gi,
-    "TD (Comment Below)\n\n$1"
+    /TD:\s*Comment Below\s*(Bring\s*:)/gi,
+    "TD: Comment Below\n\n$1"
   );
   out = out.replace(
-    /TD\s*\(Comment Below\)\s*\n+((?:🎒\s*)?Bring\s*:)/gi,
-    "TD (Comment Below)\n\n$1"
+    /TD:\s*Comment Below\s*\n+((?:🎒\s*)?(?:Bring|What to Bring)\s*:)/gi,
+    "TD: Comment Below\n\n$1"
   );
   // Final guard: enforce a blank line between TD and Bring even if spacing varies.
   out = out.replace(
-    /TD\s*\(Comment Below\)\s*(?:\r?\n\s*)+(?:🎒\s*)?Bring\s*:/gi,
-    "TD (Comment Below)\n\nBring:"
+    /TD:\s*Comment Below\s*(?:\r?\n\s*)+(?:🎒\s*)?(?:Bring|What to Bring)\s*:/gi,
+    "TD: Comment Below\n\nBring:"
   );
   out = out.replace(
-    /TD\s*\(Comment Below\)\s*(?:🎒\s*)?Bring\s*:/gi,
-    "TD (Comment Below)\n\nBring:"
+    /TD:\s*Comment Below\s*(?:🎒\s*)?(?:Bring|What to Bring)\s*:/gi,
+    "TD: Comment Below\n\nBring:"
   );
   // Add a blank line between Q and Where if missing.
   out = out.replace(/(💪\s*Q\s*:.*)\n(📍\s*Where\s*:)/gi, "$1\n\n$2");
@@ -478,15 +405,20 @@ const normalizeAiPreblast = (
   out = out.replace(/(^\s*Q\s*:.*)\n(^\s*AO\s*:)/gim, "$1\n\n$2");
   // Normalize Date/Time line (remove stray leading chars)
   out = out.replace(/^[^\S\r\n]*[\p{So}\uFE0F]*\s*Date\/Time:/gimu, "Date/Time:");
+  out = out.replace(
+    /^(Date\/Time:\s*)([A-Za-z]+,\s*)/gim,
+    "$1"
+  );
   // Ensure a blank line before Date/Time and after Date/Time.
   out = out.replace(/([^\n])\n(Date\/Time:)/gim, "$1\n\n$2");
   out = out.replace(/^(Date\/Time:[^\n]*)(\n*)/gim, "$1\n\n");
   out = out.replace(
-    /^(Date\/Time:[^\n]*)(?:\n+)(DD\s*\(Comment Below\))/gim,
+    /^(Date\/Time:[^\n]*)(?:\n+)(DD:\s*Comment Below)/gim,
     "$1\n\n$2"
   );
   // Ensure no leading space before Bring
   out = out.replace(/^\s*Bring\s*:/gim, "Bring:");
+  out = out.replace(/^\s*What to Bring\s*:/gim, "What to Bring:");
   // Remove any Weather line from content block (weather should be in intro only)
   out = out.replace(/^\s*Weather\s*:[^\n]*\n?/gim, "");
   const addr = String(address || "").trim();
@@ -521,22 +453,29 @@ const normalizeAiPreblast = (
   const qPrefix = useEmojis && qEmoji ? `${qEmoji} ` : "";
   const datePrefix = useEmojis && dateEmoji ? `${dateEmoji} ` : "";
   const bringPrefix = useEmojis && bringEmoji ? `${bringEmoji} ` : "";
-
   out = out.replace(
     /^[^\S\r\n]*[\p{So}\uFE0F]*\s*Q\s*:/gim,
-    `${qPrefix}Q:`
+    `${qPrefix}${formatStyledLabel("Q:", labelStyle)}`
   );
   out = out.replace(
     /^[^\S\r\n]*[\p{So}\uFE0F]*\s*(Date\/Time|Date)\s*:/gim,
-    `${datePrefix}Date/Time:`
+    `${datePrefix}${formatStyledLabel("Date/Time:", labelStyle)}`
   );
   out = out.replace(
-    /^[^\S\r\n]*[\p{So}\uFE0F]*\s*Bring\s*:/gim,
-    `${bringPrefix}Bring:`
+    /^[^\S\r\n]*[\p{So}\uFE0F]*\s*(?:Bring|What to Bring)\s*:/gim,
+    `${bringPrefix}${formatStyledLabel(`${bringLabel}:`, labelStyle)}`
+  );
+  out = out.replace(
+    /^[^\S\r\n]*[\p{So}\uFE0F]*\s*AO\s*:/gim,
+    `${useEmojis ? "📍 " : ""}${formatStyledLabel("AO:", labelStyle)}`
+  );
+  out = out.replace(
+    /^[^\S\r\n]*[\p{So}\uFE0F]*\s*Where\s*:/gim,
+    `${useEmojis ? "📍 " : ""}${formatStyledLabel("Where:", labelStyle)}`
   );
 
   // DD/TD variability (keep same meaning, change formatting)
-  const ddTdBlock = buildDdTdBlock(styleSeed);
+  const ddTdBlock = buildDdTdBlock(labelStyle);
   if (ddTdBlock) {
     const ddtdLines = ddTdBlock.split("\n");
     const lines = out.split("\n");
@@ -665,7 +604,8 @@ const formatJurassicParkNoAI = (args: {
     : "";
   const qPrefix = args.useEmojis && qEmoji ? `${qEmoji} ` : "";
   const datePrefix = args.useEmojis && dateEmoji ? `${dateEmoji} ` : "";
-  const ddTdBlock = buildDdTdBlock(args.styleSeed);
+  const labelStyle = pickLabelStyle(args.styleSeed);
+  const ddTdBlock = buildDdTdBlock(labelStyle);
 
   lines.push(hashtags);
   lines.push("");
@@ -675,12 +615,19 @@ const formatJurassicParkNoAI = (args: {
     '***Q — CLICK “COPY & START POST IN BAND”, THEN REPLACE THIS WITH YOUR OWN CALL TO ACTION MESSAGE***'
   );
   lines.push("");
-  lines.push(`${qPrefix}Q: ${qClean}`);
+  lines.push(buildStyledFieldLine(qPrefix, "Q:", qClean, labelStyle));
   lines.push("");
-  lines.push(`${args.useEmojis ? "📍 " : ""}AO: ${whereLine}${addrSuffix}`);
+  lines.push(
+    buildStyledFieldLine(
+      args.useEmojis ? "📍 " : "",
+      "AO:",
+      `${whereLine}${addrSuffix}`,
+      labelStyle
+    )
+  );
   lines.push(`📌 Meet Location: ${meet}`);
   lines.push("");
-  lines.push(`${datePrefix}${args.workoutDate}`);
+  lines.push(`${datePrefix}${stripWeekdayFromDate(args.workoutDate)}`);
   lines.push("");
   lines.push("🏃‍♂️ Runners — First Wave");
   lines.push("6:00 AM step-off");
@@ -759,7 +706,8 @@ const formatJurassicParkAI = (args: {
     : "";
   const qPrefix = args.useEmojis && qEmoji ? `${qEmoji} ` : "";
   const datePrefix = args.useEmojis && dateEmoji ? `${dateEmoji} ` : "";
-  const ddTdBlock = buildDdTdBlock(args.styleSeed);
+  const labelStyle = pickLabelStyle(args.styleSeed);
+  const ddTdBlock = buildDdTdBlock(labelStyle);
 
   lines.push(hashtags);
   lines.push("");
@@ -767,9 +715,16 @@ const formatJurassicParkAI = (args: {
   lines.push("");
   lines.push(msg);
   lines.push("");
-  lines.push(`${qPrefix}Q: ${qClean}`);
+  lines.push(buildStyledFieldLine(qPrefix, "Q:", qClean, labelStyle));
   lines.push("");
-  lines.push(`${args.useEmojis ? "📍 " : ""}AO: ${whereLine}${addrSuffix}`);
+  lines.push(
+    buildStyledFieldLine(
+      args.useEmojis ? "📍 " : "",
+      "AO:",
+      `${whereLine}${addrSuffix}`,
+      labelStyle
+    )
+  );
   lines.push(`📌 Meet Location: ${meet}`);
   lines.push("");
   lines.push(`${datePrefix}${args.workoutDate}`);
@@ -838,13 +793,20 @@ const formatStandardNoAI = (args: {
   const qPrefix = args.useEmojis && qEmoji ? `${qEmoji} ` : "";
   const datePrefix = args.useEmojis && dateEmoji ? `${dateEmoji} ` : "";
   const bringPrefix = args.useEmojis && bringEmoji ? `${bringEmoji} ` : "";
+  const labelStyle = pickLabelStyle(args.styleSeed);
+  const bringLabel = pickBringLabel(args.styleSeed);
 
   const bringLine = args.bringItems.length
-    ? `${bringPrefix}Bring: ${args.bringItems.join(", ")}`
+    ? buildStyledFieldLine(
+        bringPrefix,
+        `${bringLabel}:`,
+        args.bringItems.join(", "),
+        labelStyle
+      )
     : "";
 
   const addrSuffix = args.ao.address ? ` (${args.ao.address})` : "";
-  const ddTdBlock = buildDdTdBlock(args.styleSeed);
+  const ddTdBlock = buildDdTdBlock(labelStyle);
 
 
   const lines: string[] = [];
@@ -855,9 +817,23 @@ const formatStandardNoAI = (args: {
     '***Q — CLICK “COPY & START POST IN BAND”, THEN REPLACE THIS WITH YOUR OWN CALL TO ACTION MESSAGE***'
   );
   lines.push("");
-  lines.push(`${qPrefix}Q: ${stripAt(args.qName) || "TBD"}`);
+  lines.push(
+    buildStyledFieldLine(
+      qPrefix,
+      "Q:",
+      stripAt(args.qName) || "TBD",
+      labelStyle
+    )
+  );
   lines.push("");
-  lines.push(`${args.useEmojis ? "📍 " : ""}AO: ${whereLine}${addrSuffix}`);
+  lines.push(
+    buildStyledFieldLine(
+      args.useEmojis ? "📍 " : "",
+      "AO:",
+      `${whereLine}${addrSuffix}`,
+      labelStyle
+    )
+  );
 
   if (args.ao.meetingPoint?.trim()) {
     lines.push(
@@ -866,7 +842,14 @@ const formatStandardNoAI = (args: {
   }
 
   lines.push("");
-  lines.push(`${datePrefix}Date/Time: ${args.workoutDate} (${args.workoutTime})`);
+  lines.push(
+    buildStyledFieldLine(
+      datePrefix,
+      "Date/Time:",
+      `${stripWeekdayFromDate(args.workoutDate)} (${args.workoutTime})`,
+      labelStyle
+    )
+  );
   lines.push(ddTdBlock);
   lines.push("");
 
@@ -1011,6 +994,7 @@ export const PreblastGeneratorView: React.FC = () => {
   const [customToBring, setCustomToBring] = useState("");
   const [extraHashtags, setExtraHashtags] = useState<string[]>([]);
   const [customHashtags, setCustomHashtags] = useState("");
+  const [isMobileHashtagsExpanded, setIsMobileHashtagsExpanded] = useState(false);
   const [notes, setNotes] = useState("");
   const [generatedPreblastText, setGeneratedPreblastText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -1126,6 +1110,7 @@ export const PreblastGeneratorView: React.FC = () => {
     if (lastAoIdRef.current === activeAo.id) return;
     lastAoIdRef.current = activeAo.id;
     didRestoreRef.current = false;
+    setIsMobileHashtagsExpanded(false);
     setWorkoutDate(defaultDate);
     setWorkoutTime(defaultTime);
     setDateInputValue(toIsoDate(defaultDate));
@@ -1189,14 +1174,14 @@ export const PreblastGeneratorView: React.FC = () => {
   }, [generatedPreblastText]);
 
   const commonItems = [
-    "Gloves",
     "Coupon",
-    "Sandbag",
-    "Ruck",
-    "Vest",
-    "Hydration",
     "FNG",
+    "Gloves",
     "Headlamp",
+    "Hydration",
+    "Ruck",
+    "Sandbag",
+    "Vest",
   ];
 
   const hashtagOptions = useMemo(() => {
@@ -1354,7 +1339,6 @@ export const PreblastGeneratorView: React.FC = () => {
       forceNoEmojis,
       aiOptions.minimalEmojis
     );
-    const weatherSummaryFinal = "";
     const aiOptionsNotes = buildAiOptionsNotes(!useEmojis);
 
     // JP: strict "hook message only" instructions + CTA.
@@ -1383,7 +1367,6 @@ export const PreblastGeneratorView: React.FC = () => {
         workoutDate,
         workoutTime,
         aiOptions.minimalEmojis,
-        weatherSummaryFinal,
         normalizedExtraHashtags
       );
 
@@ -1423,7 +1406,6 @@ export const PreblastGeneratorView: React.FC = () => {
       const normalized = normalizeAiPreblast(
         cleanedRaw,
         activeAo.address || "",
-        weatherSummaryFinal,
         styleSeed,
         useEmojis
       );
@@ -1521,10 +1503,9 @@ export const PreblastGeneratorView: React.FC = () => {
       setTimeout(() => setCopySuccess(false), 2000);
     }
 
-    const newWin = window.open("", "_blank");
+    const newWin = window.open(bandUrl, "_blank", "noopener,noreferrer");
     if (newWin) {
       newWin.opener = null;
-      newWin.location.href = bandUrl;
 
       if (isMobile) {
         setTimeout(() => {
@@ -1533,7 +1514,10 @@ export const PreblastGeneratorView: React.FC = () => {
           } catch {}
         }, 800);
       }
+      return;
     }
+
+    window.location.href = bandUrl;
   };
 
   /* -------------------------------------------------
@@ -1555,13 +1539,12 @@ export const PreblastGeneratorView: React.FC = () => {
           <div className="space-y-6">
             {/* AO DETAILS */}
             <div className="bg-slate-900/60 border border-slate-700 rounded-md p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="font-semibold text-sm text-slate-200">
-                  {preblastAoLabel}
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-400">Change AO:</span>
-                  <AoSelector />
+              <div className="text-sm flex items-center justify-between gap-3 min-w-0">
+                <span className="font-bold text-slate-300 whitespace-nowrap">
+                  Currently Selected AO:
+                </span>
+                <div className="min-w-0">
+                  <AoSelector compact />
                 </div>
               </div>
 
@@ -1711,87 +1694,155 @@ export const PreblastGeneratorView: React.FC = () => {
               </label>
 
               <div className="space-y-3">
-                {activeAo.id !== "jurassicpark" ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {combinedHashtags.map(({ tag, isDefault }) => {
-                      const checked = isDefault || normalizedExtraHashtags.includes(tag);
-                      return (
-                        <label
-                          key={tag}
-                          className={`flex items-center gap-2 bg-slate-700 p-2 rounded-md text-xs sm:text-sm ${
-                            isDefault ? "" : "hover:bg-slate-600"
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            disabled={isDefault}
-                            onChange={() =>
-                              setExtraHashtags((prev) =>
-                                prev.includes(tag)
-                                  ? prev.filter((t) => t !== tag)
-                                  : [...prev, tag]
-                              )
-                            }
-                            className="h-5 w-5 text-red-600"
-                          />
-                          {tag}
-                        </label>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <>
-                    {defaultHashtags.length > 0 && (
-                      <div className="grid grid-cols-2 sm:grid-cols-2 gap-2">
-                        {defaultHashtags.map((tag) => (
+                <div className="grid grid-cols-2 sm:hidden gap-2">
+                  {defaultHashtags.map((tag) => (
+                    <label
+                      key={`mobile-default-${tag}`}
+                      className="flex items-center gap-2 bg-slate-700 p-2 rounded-md text-xs"
+                    >
+                      <input
+                        type="checkbox"
+                        checked
+                        disabled
+                        className="h-5 w-5 text-red-600"
+                      />
+                      {tag}
+                    </label>
+                  ))}
+                </div>
+
+                <div className="sm:hidden">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setIsMobileHashtagsExpanded((prev) => !prev)
+                    }
+                    className="w-full min-h-[44px] bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-left text-sm text-slate-200 hover:bg-slate-600 flex items-center justify-between gap-3"
+                  >
+                    <span>
+                      {isMobileHashtagsExpanded
+                        ? "Hide additional hashtag options"
+                        : "Add hashtags"}
+                    </span>
+                    <span className="text-slate-400" aria-hidden="true">
+                      {isMobileHashtagsExpanded ? "▴" : "▾"}
+                    </span>
+                  </button>
+                </div>
+
+                <div className="hidden sm:block">
+                  {activeAo.id !== "jurassicpark" ? (
+                    <div className="grid grid-cols-3 gap-2">
+                      {combinedHashtags.map(({ tag, isDefault }) => {
+                        const checked = isDefault || normalizedExtraHashtags.includes(tag);
+                        return (
                           <label
-                            key={`default-${tag}`}
-                            className="flex items-center gap-2 bg-slate-700 p-2 rounded-md text-xs sm:text-sm"
+                            key={tag}
+                            className={`flex items-center gap-2 bg-slate-700 p-2 rounded-md text-sm ${
+                              isDefault ? "" : "hover:bg-slate-600"
+                            }`}
                           >
                             <input
                               type="checkbox"
-                              checked
-                              disabled
+                              checked={checked}
+                              disabled={isDefault}
+                              onChange={() =>
+                                setExtraHashtags((prev) =>
+                                  prev.includes(tag)
+                                    ? prev.filter((t) => t !== tag)
+                                    : [...prev, tag]
+                                )
+                              }
                               className="h-5 w-5 text-red-600"
                             />
                             {tag}
                           </label>
-                        ))}
-                      </div>
-                    )}
-
-                    {optionalHashtags.length > 0 && (
-                      <div className="grid grid-cols-2 sm:grid-cols-2 gap-2">
-                        {optionalHashtags.map((tag) => {
-                          const checked = normalizedExtraHashtags.includes(tag);
-                          return (
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <>
+                      {defaultHashtags.length > 0 && (
+                        <div className="grid grid-cols-2 gap-2">
+                          {defaultHashtags.map((tag) => (
                             <label
-                              key={tag}
-                              className="flex items-center gap-2 bg-slate-700 p-2 rounded-md text-xs sm:text-sm hover:bg-slate-600"
+                              key={`default-${tag}`}
+                              className="flex items-center gap-2 bg-slate-700 p-2 rounded-md text-sm"
                             >
                               <input
                                 type="checkbox"
-                                checked={checked}
-                                onChange={() =>
-                                  setExtraHashtags((prev) =>
-                                    prev.includes(tag)
-                                      ? prev.filter((t) => t !== tag)
-                                      : [...prev, tag]
-                                  )
-                                }
+                                checked
+                                disabled
                                 className="h-5 w-5 text-red-600"
                               />
                               {tag}
                             </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </>
-                )}
+                          ))}
+                        </div>
+                      )}
 
-                <div>
+                      {optionalHashtags.length > 0 && (
+                        <div className="grid grid-cols-2 gap-2 mt-3">
+                          {optionalHashtags.map((tag) => {
+                            const checked = normalizedExtraHashtags.includes(tag);
+                            return (
+                              <label
+                                key={tag}
+                                className="flex items-center gap-2 bg-slate-700 p-2 rounded-md text-sm hover:bg-slate-600"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() =>
+                                    setExtraHashtags((prev) =>
+                                      prev.includes(tag)
+                                        ? prev.filter((t) => t !== tag)
+                                        : [...prev, tag]
+                                    )
+                                  }
+                                  className="h-5 w-5 text-red-600"
+                                />
+                                {tag}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <div className={isMobileHashtagsExpanded ? "sm:hidden space-y-3" : "hidden sm:hidden"}>
+                  {optionalHashtags.length > 0 && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {optionalHashtags.map((tag) => {
+                        const checked = normalizedExtraHashtags.includes(tag);
+                        return (
+                          <label
+                            key={`mobile-${tag}`}
+                            className="flex items-center gap-2 bg-slate-700 p-2 rounded-md text-xs hover:bg-slate-600"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                setExtraHashtags((prev) =>
+                                  prev.includes(tag)
+                                    ? prev.filter((t) => t !== tag)
+                                    : [...prev, tag]
+                                )
+                              }
+                              className="h-5 w-5 text-red-600"
+                            />
+                            {tag}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className={isMobileHashtagsExpanded ? "" : "hidden sm:block"}>
                   <label className="block text-xs text-slate-400 mb-1">
                     Custom hashtags (space or comma separated)
                   </label>

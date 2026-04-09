@@ -31,6 +31,7 @@ export type AoConfig = {
   // Links
   bandPostUrl?: string;
   bandUrl?: string; // optional (if you ever want a general band link)
+  reportUrl?: string;
   qSheet: {
     tinyUrl?: string;
     googleSheetUrl?: string;
@@ -73,6 +74,8 @@ export const AO_CONFIG: Record<AoId, AoConfig> = {
     ],
 
     bandPostUrl: "https://www.band.us/band/94185591/post",
+    reportUrl:
+      "https://lookerstudio.google.com/embed/reporting/f13d2066-eb12-4d9e-89fe-7b6113a5c884/page/p_annf64ba2d",
     qSheet: {
       tinyUrl: undefined,
       googleSheetUrl: undefined,
@@ -98,6 +101,8 @@ export const AO_CONFIG: Record<AoId, AoConfig> = {
     ],
 
     bandPostUrl: "https://www.band.us/band/93641863/post",
+    reportUrl:
+      "https://lookerstudio.google.com/u/0/reporting/e299df64-56cc-45ca-bdc2-9863789ace26/page/p_4n9xsf5ypd",
     qSheet: {
       tinyUrl: "https://tinyurl.com/F3Colosseum",
       googleSheetUrl:
@@ -126,6 +131,8 @@ export const AO_CONFIG: Record<AoId, AoConfig> = {
 
     // If JP has a different BAND post URL, change it here
     bandPostUrl: "https://www.band.us/band/93641863/post",
+    reportUrl:
+      "https://lookerstudio.google.com/u/0/reporting/e299df64-56cc-45ca-bdc2-9863789ace26/page/p_8s0t5b2wvd",
     qSheet: {
       tinyUrl: "https://tinyurl.com/F3JurassicPark",
       googleSheetUrl:
@@ -162,6 +169,8 @@ export const AO_CONFIG: Record<AoId, AoConfig> = {
     ],
 
     bandPostUrl: "https://www.band.us/band/94185591/post",
+    reportUrl:
+      "https://lookerstudio.google.com/embed/reporting/f13d2066-eb12-4d9e-89fe-7b6113a5c884/page/p_978n00ea2d",
     qSheet: {
       tinyUrl: undefined,
       googleSheetUrl: undefined,
@@ -192,6 +201,8 @@ export const AO_CONFIG: Record<AoId, AoConfig> = {
     ],
 
     bandPostUrl: "https://www.band.us/band/94185591/post",
+    reportUrl:
+      "https://lookerstudio.google.com/embed/reporting/f13d2066-eb12-4d9e-89fe-7b6113a5c884/page/p_ieuw34ea2d",
     qSheet: {
       tinyUrl: undefined,
       googleSheetUrl: undefined,
@@ -222,6 +233,8 @@ export const AO_CONFIG: Record<AoId, AoConfig> = {
     ],
 
     bandPostUrl: "https://www.band.us/band/94185591/post",
+    reportUrl:
+      "https://lookerstudio.google.com/embed/reporting/f13d2066-eb12-4d9e-89fe-7b6113a5c884/page/p_zmfqf7ea2d",
     qSheet: {
       tinyUrl: undefined,
       googleSheetUrl: undefined,
@@ -257,6 +270,8 @@ export const AO_CONFIG: Record<AoId, AoConfig> = {
     ],
 
     bandPostUrl: "https://www.band.us/band/94185591/post",
+    reportUrl:
+      "https://lookerstudio.google.com/embed/reporting/f13d2066-eb12-4d9e-89fe-7b6113a5c884/page/p_ek83v9ea2d",
     qSheet: {
       tinyUrl: undefined,
       googleSheetUrl: undefined,

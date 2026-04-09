@@ -31,6 +31,7 @@ import {
   MegaphoneIcon,
   ClipboardListIcon,
   DocumentTextIcon,
+  ChartBarIcon,
 } from "./components/icons";
 
 import type { WorkoutSession, PlannerData } from "./types";
@@ -134,6 +135,12 @@ const App: React.FC = () => {
   };
 
   const clearImportedPlan = () => setPlanToImport(null);
+  const hasReport = !!activeAo.reportUrl;
+  const mobileNavCount =
+    (activeAo.modules.qSheet ? 1 : 0) +
+    (activeAo.modules.planner ? 1 : 0) +
+    2 +
+    (hasReport ? 1 : 0);
 
   //
   // Render active view
@@ -197,6 +204,8 @@ const App: React.FC = () => {
     view: View;
     label: string;
     icon: React.ReactNode;
+    mobileLabel?: string;
+    className?: string;
   }> = ({ view, label, icon }) => (
     <button
       onClick={() => setActiveView(view)}
@@ -212,21 +221,23 @@ const App: React.FC = () => {
     </button>
   );
 
-  // -------------------------------------------------
-  // Header line 2: per your examples
-  // -------------------------------------------------
-  const headerLine2 = (() => {
-  switch (activeAo.id) {
-    case "compass":
-      return "Compass";
-    case "colosseum":
-      return "Colosseum";
-    case "jurassicpark":
-      return "Jurassic Park";
-    default:
-      return activeAo.displayName;
-  }
-})();
+  const MobileNavItem: React.FC<{
+    view: View;
+    label: string;
+    icon: React.ReactNode;
+  }> = ({ view, label, icon }) => (
+    <button
+      onClick={() => setActiveView(view)}
+      className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 transition-colors ${
+        activeView === view
+          ? "bg-red-600 text-white shadow-[0_10px_24px_rgba(220,38,38,0.35)]"
+          : "text-slate-300"
+      }`}
+    >
+      <span className="flex h-5 items-center">{icon}</span>
+      <span className="text-[11px] leading-none">{label}</span>
+    </button>
+  );
 
   const ViewFallback = (
     <div className="h-80 flex items-center justify-center text-slate-300">
@@ -244,18 +255,14 @@ const App: React.FC = () => {
             <div className="flex items-center min-w-0">
   <div className="min-w-0">
     <h1 className="text-xl sm:text-3xl font-display leading-tight truncate">
-      F3 Hub
+      F3 Workout Hub
     </h1>
-
-    <div className="text-xs sm:text-sm text-slate-400 truncate">
-      {headerLine2}
-    </div>
   </div>
 </div>
 
 
             <div className="flex items-center gap-3 flex-shrink-0">
-              <nav className="flex items-center gap-2">
+              <nav className="hidden sm:flex items-center gap-2">
                 {activeAo.modules.qSheet && (
                   <NavItem view="Q_SHEET" label="Q-Sheet" icon={<CalendarIcon />} />
                 )}
@@ -279,6 +286,18 @@ const App: React.FC = () => {
                   label="Backblast"
                   icon={<DocumentTextIcon />}
                 />
+
+                {activeAo.reportUrl && (
+                  <a
+                    href={activeAo.reportUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 px-2 py-2 rounded-md text-slate-300 hover:bg-slate-700"
+                  >
+                    <ChartBarIcon />
+                    <span>Stats</span>
+                  </a>
+                )}
               </nav>
 
               {/* ✅ AO selector in header (dropdown shows Jurassic Park (JP) per your AoSelector update) */}
@@ -288,9 +307,56 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto p-4">
+      <main className="max-w-6xl mx-auto p-4 pb-28 sm:pb-4">
         <Suspense fallback={ViewFallback}>{renderView()}</Suspense>
       </main>
+
+      <div className="sm:hidden fixed inset-x-0 bottom-4 z-20 px-3">
+        <div className="mx-auto max-w-md rounded-[28px] border border-slate-700/80 bg-slate-900/95 p-2 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur">
+          <div
+            className="grid gap-1"
+            style={{ gridTemplateColumns: `repeat(${mobileNavCount}, minmax(0, 1fr))` }}
+          >
+            {activeAo.modules.qSheet && (
+              <MobileNavItem
+                view="Q_SHEET"
+                label="Schedule"
+                icon={<CalendarIcon />}
+              />
+            )}
+            <MobileNavItem
+              view="PRE_BLAST"
+              label="Pre-Blast"
+              icon={<MegaphoneIcon />}
+            />
+            {activeAo.modules.planner && (
+              <MobileNavItem
+                view="WORKOUT_PLANNER"
+                label="Planner"
+                icon={<ClipboardListIcon />}
+              />
+            )}
+            <MobileNavItem
+              view="BACK_BLAST"
+              label="Backblast"
+              icon={<DocumentTextIcon />}
+            />
+            {activeAo.reportUrl && (
+              <a
+                href={activeAo.reportUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 text-slate-300 transition-colors"
+              >
+                <span className="flex h-5 items-center">
+                  <ChartBarIcon />
+                </span>
+                <span className="text-[11px] leading-none">Stats</span>
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
 
       <footer className="py-6 text-center text-slate-500">
         <div>Forged in the gloom. Built for the PAX.</div>

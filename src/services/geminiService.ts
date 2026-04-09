@@ -202,6 +202,11 @@ const getWorkoutDateAndTime = () => {
   return { date: dateString, time, simpleDate: simpleDateString };
 };
 
+const stripWeekdayFromDate = (value: string) =>
+  String(value || "")
+    .trim()
+    .replace(/^[A-Za-z]+,\s*/, "");
+
 // -----------------------------------------------------
 // PREBLAST GENERATOR (WITH RETRY) — FIRST PERSON ✅
 // IMPORTANT CHANGE: throws on failure so caller can handle.
@@ -214,7 +219,6 @@ export const generatePreblast = async (
   workoutDate: string,
   workoutTime: string,
   minimalEmojis: boolean = false,
-  weatherSummary: string = "",
   extraHashtags: string[] = []
 ): Promise<string> => {
   if (!API_KEY) throw new Error("Missing VITE_GEMINI_API_KEY.");
@@ -264,7 +268,7 @@ ${earlyBird.td}
 Q: ${qName}
 WHERE: ${whereLine}
 ${addressLine ? addressLine : ""}
-Date/Time: ${workoutDate} (${workoutTime})
+Date/Time: ${stripWeekdayFromDate(workoutDate)} (${workoutTime})
 ${earlyBird.dd}
 ${earlyBird.td}
 
