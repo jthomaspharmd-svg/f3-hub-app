@@ -150,6 +150,7 @@ const normalizeBackblastEmojis = (
     /^\s*[\p{So}\uFE0F]*\s*Date\/Time\s*:/gim,
     `${date}Date/Time:`
   );
+  out = out.replace(/^(Date\/Time:\s*)([A-Za-z]+,\s*)/gim, "$1");
   out = out.replace(/^\s*[\p{So}\uFE0F]*\s*Q\s*:/gim, `${q}Q:`);
   out = out.replace(/^\s*[\p{So}\uFE0F]*\s*PAX\s*:/gim, `${pax}PAX:`);
   out = out.replace(
@@ -179,6 +180,11 @@ const formatDateLong = (d: Date) => {
   const weekday = d.toLocaleDateString("en-US", { weekday: "long" });
   return `${weekday}, ${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
 };
+
+const stripWeekdayFromDate = (value: string) =>
+  String(value || "")
+    .trim()
+    .replace(/^[A-Za-z]+,\s*/, "");
 
 const toIsoDate = (longDateStr: string): string => {
   const parsed = new Date(longDateStr);
@@ -2286,9 +2292,12 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
           }
         }
 
-        const title = timeLabel
-          ? `**${round.name || `Round ${i + 1}`}** — ${timeLabel}`
-          : `**${round.name || `Round ${i + 1}`}**`;
+        const hasMultipleRounds = cleaned.length > 1;
+        const title = hasMultipleRounds
+          ? timeLabel
+            ? `**${round.name || `Round ${i + 1}`}** — ${timeLabel}`
+            : `**${round.name || `Round ${i + 1}`}**`
+          : timeLabel;
 
         const descRaw = compactOptionalString(round.description)
           ? String(round.description).trim()
@@ -2301,7 +2310,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
 
         const desc = descRaw ? `${descRaw}\n` : "";
         const body = exercises || "As called by the Q.";
-        return `${title}\n${desc}${body}`;
+        return title ? `${title}\n${desc}${body}` : `${desc}${body}`;
       })
       .join("\n\n");
   };
@@ -2535,7 +2544,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
     const thangSection = formatThang(args.thang);
     const emoji = buildEmojiMap(args.styleSeed, args.useEmojis);
     const aoLabel = emoji.ao ? `${emoji.ao}AO` : "AO";
-    const dateLabel = emoji.date ? `${emoji.date}Date/Time` : "Date/Time";
+    const dateLabel = emoji.date ? `${emoji.date}Date` : "Date";
     const qLabel = emoji.q ? `${emoji.q}Q` : "Q";
     const paxLabel = emoji.pax ? `${emoji.pax}PAX` : "PAX";
     const disclaimerLabel = emoji.disclaimer
@@ -2575,7 +2584,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
     );
     lines.push("");
     lines.push(`${aoLabel}: ${backblastAoLabel}`);
-    lines.push(`${dateLabel}: ${args.longDate} (${args.workoutTime})`);
+    lines.push(`${dateLabel}: ${args.longDate}`);
     lines.push(`${qLabel}: ${cleanQName}`);
     lines.push(`${paxLabel}: ${totalPax} Total`);
     lines.push("");
@@ -2632,7 +2641,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
 
     const emoji = buildEmojiMap(args.styleSeed, args.useEmojis);
     const aoLabel = emoji.ao ? `${emoji.ao}AO` : "AO";
-    const dateLabel = emoji.date ? `${emoji.date}Date/Time` : "Date/Time";
+    const dateLabel = emoji.date ? `${emoji.date}Date` : "Date";
     const qLabel = emoji.q ? `${emoji.q}Q` : "Q";
     const paxLabel = emoji.pax ? `${emoji.pax}PAX` : "PAX";
 
@@ -2644,7 +2653,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
     );
     lines.push("");
     lines.push(`${aoLabel}: ${backblastAoLabel}`);
-    lines.push(`${dateLabel}: ${args.longDate} (${args.workoutTime})`);
+    lines.push(`${dateLabel}: ${args.longDate}`);
     lines.push(`${qLabel}: ${cleanQName}`);
     lines.push(`${paxLabel}: ${totalPax} Total`);
     lines.push("");
@@ -3552,8 +3561,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
       <div className="flex items-center gap-2 mb-4">
         <DocumentTextIcon className="h-6 w-6 text-red-500 shrink-0" />
         <h2 className="text-lg sm:text-xl font-display text-white tracking-wide truncate">
-          Backblast Generator{" "}
-          <span className="text-slate-300">— {backblastAoLabel}</span>
+          Backblast Generator
         </h2>
       </div>
 
@@ -3568,7 +3576,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
               </div>
               <div className="flex items-center gap-2 whitespace-nowrap">
                 <span className="text-xs text-slate-400">Change AO:</span>
-                <AoSelector />
+                <AoSelector compact />
                 <button
                   type="button"
                   onClick={handleClearDraft}

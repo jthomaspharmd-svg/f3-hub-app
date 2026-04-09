@@ -209,6 +209,8 @@ const GoogleSheetQSheet: React.FC<{
   sheetUrl: string;
   addressLinkUrl?: string;
 }> = ({ title, whereName, address, sheetUrl, addressLinkUrl }) => {
+  const addressLines = address.split("\n");
+
   const buildPreviewUrl = (url: string) => {
     const match = url.match(/https:\/\/docs\.google\.com\/spreadsheets\/d\/([^/]+)/);
     if (!match) return url;
@@ -224,24 +226,34 @@ const GoogleSheetQSheet: React.FC<{
   return (
     <div className="animate-fade-in">
       {/* Header */}
-      <div className="bg-slate-800/50 border border-slate-700 p-4 rounded-lg text-center mb-6">
-        <h3 className="text-xl text-red-500 font-display tracking-wide">
-          AO: {title}
+      <div className="bg-slate-800/50 border border-slate-700 px-4 py-2.5 rounded-lg text-center mb-4">
+        <h3 className="text-xl text-slate-100 font-display tracking-wide leading-tight">
+          {title}
         </h3>
-        <p className="text-slate-300">{whereName}</p>
+        <p className="text-slate-300 text-sm leading-tight">{whereName}</p>
 
         {addressLinkUrl ? (
           <a
             href={addressLinkUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-slate-400 text-sm mt-1 whitespace-pre-line underline decoration-dotted hover:decoration-solid hover:text-red-300 inline-block"
+            className="text-slate-300 text-sm whitespace-pre-line underline decoration-dotted hover:decoration-solid hover:text-red-300 inline-block leading-tight"
           >
-            {address}
+            <span className="block">📍 {addressLines[0]}</span>
+            {addressLines.slice(1).map((line, index) => (
+              <span key={index} className="block whitespace-nowrap">
+                {line}
+              </span>
+            ))}
           </a>
         ) : (
-          <p className="text-slate-400 text-sm mt-1 whitespace-pre-line">
-            {address}
+          <p className="text-slate-300 text-sm leading-tight">
+            <span className="block">{addressLines[0]}</span>
+            {addressLines.slice(1).map((line, index) => (
+              <span key={index} className="block whitespace-nowrap">
+                {line}
+              </span>
+            ))}
           </p>
         )}
       </div>
@@ -255,8 +267,8 @@ const GoogleSheetQSheet: React.FC<{
           </h2>
         </div>
 
-        <p className="text-slate-300 mb-4">
-          This AO uses the Google Sheet for Q sign-ups.
+        <p className="text-slate-300 text-sm mb-4">
+          This AO uses Google Sheets for Q signup.
         </p>
 
         <a
@@ -499,9 +511,9 @@ export const QSheetView: React.FC = () => {
   return (
     <div>
       {/* HEADER */}
-      <div className="bg-slate-800/50 border border-slate-700 p-4 rounded-lg text-center mb-6">
-        <h3 className="text-xl text-red-500 font-display tracking-wide">
-          AO: {headerTitle}
+      <div className="bg-slate-800/50 border border-slate-700 px-4 py-2.5 rounded-lg text-center mb-4">
+        <h3 className="text-xl text-slate-100 font-display tracking-wide leading-tight">
+          {headerTitle}
         </h3>
 
         {isCompass ? (
@@ -509,15 +521,14 @@ export const QSheetView: React.FC = () => {
             href={compassLink}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-slate-300 underline decoration-dotted hover:decoration-solid hover:text-red-300"
+            className="text-slate-300 text-sm underline decoration-dotted hover:decoration-solid hover:text-red-300 inline-block leading-tight"
           >
-            {headerSub}
+            📍 {headerSub}
           </a>
         ) : (
-          <p className="text-slate-300">{headerSub}</p>
+          <p className="text-slate-300 text-sm leading-tight">{headerSub}</p>
         )}
 
-        {isCompass && <p className="text-slate-400 text-sm mt-1">AOQ: Alcatraz</p>}
       </div>
 
       {/* CONTROLS */}

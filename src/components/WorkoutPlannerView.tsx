@@ -1577,9 +1577,9 @@ export const WorkoutPlannerView: React.FC<WorkoutPlannerViewProps> = ({
 
       <div className="flex items-center gap-2 mb-4">
         <ClipboardListIcon className="h-6 w-6 text-red-500" />
-        <h2 className="text-xl sm:text-2xl font-display tracking-wide text-white">
+        <h2 className="text-lg sm:text-xl font-display tracking-wide text-white">
           Workout Planner{" "}
-          {compactOptionalString(aoShortLabel) ? (
+          {false ? (
             <span className="text-slate-300 font-normal">— {aoShortLabel}</span>
           ) : null}
         </h2>
@@ -1653,13 +1653,12 @@ export const WorkoutPlannerView: React.FC<WorkoutPlannerViewProps> = ({
           <div className="flex-1 min-w-0">
             {compactOptionalString(aoShortLabel) && (
               <div className="bg-slate-900/60 border border-slate-700 rounded-md p-3 mb-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="font-semibold text-sm text-slate-200 truncate">
-                    {aoShortLabel}
-                  </div>
-                  <div className="flex items-center gap-2 whitespace-nowrap">
-                    <span className="text-xs text-slate-400">Change AO:</span>
-                    <AoSelector />
+                <div className="text-sm flex items-center justify-between gap-3 min-w-0">
+                  <span className="font-bold text-slate-300 whitespace-nowrap">
+                    Currently Selected AO:
+                  </span>
+                  <div className="min-w-0">
+                    <AoSelector compact />
                   </div>
                 </div>
               </div>
