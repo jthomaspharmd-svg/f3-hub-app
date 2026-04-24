@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import { getPaxListByAo, THANG_EXERCISES, WARMUP_EXERCISES } from "../constants";
 import { db } from "../firebase";
+import { usePaxDirectoryVersion } from "../pax/PaxDirectoryContext";
 import { createId } from "../utils/ids";
 import {
   BurgerIcon,
@@ -632,6 +633,7 @@ const SectionHeader: React.FC<{
 );
 
 export const EventPlannerMock: React.FC = () => {
+  const paxDirectoryVersion = usePaxDirectoryVersion();
   const [activeTab, setActiveTab] = useState<TabKey>("leadership");
   const [leadershipRoles, setLeadershipRoles] = useState(initialLeadershipRoles);
   const [workoutPlan, setWorkoutPlan] = useState(initialWorkoutPlan);
@@ -654,7 +656,10 @@ export const EventPlannerMock: React.FC = () => {
     return `${daysRemaining} Days`;
   }, []);
 
-  const paxOptions = useMemo(() => [...getPaxListByAo("compass")], []);
+  const paxOptions = useMemo(
+    () => [...getPaxListByAo("compass")],
+    [paxDirectoryVersion]
+  );
 
   useEffect(() => {
     let isMounted = true;
