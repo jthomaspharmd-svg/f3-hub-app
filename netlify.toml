@@ -5,3 +5,8 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
   external_node_modules = ["google-auth-library"]
+
+[[redirects]]
+  from = "/event-planner"
+  to = "/index.html"
+  status = 200
