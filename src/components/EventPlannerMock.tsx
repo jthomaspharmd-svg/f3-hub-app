@@ -12,8 +12,13 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { getPaxListByAo, THANG_EXERCISES, WARMUP_EXERCISES } from "../constants";
+import { setPaxDirectory } from "../constants";
 import { db } from "../firebase";
-import { usePaxDirectoryVersion } from "../pax/PaxDirectoryContext";
+import {
+  useBumpPaxDirectoryVersion,
+  usePaxDirectoryVersion,
+} from "../pax/PaxDirectoryContext";
+import { getPaxDirectory } from "../services/paxDirectory";
 import { createId } from "../utils/ids";
 import {
   BurgerIcon,
@@ -634,6 +639,7 @@ const SectionHeader: React.FC<{
 
 export const EventPlannerMock: React.FC = () => {
   const paxDirectoryVersion = usePaxDirectoryVersion();
+  const bumpPaxDirectoryVersion = useBumpPaxDirectoryVersion();
   const [activeTab, setActiveTab] = useState<TabKey>("leadership");
   const [leadershipRoles, setLeadershipRoles] = useState(initialLeadershipRoles);
   const [workoutPlan, setWorkoutPlan] = useState(initialWorkoutPlan);
@@ -660,6 +666,19 @@ export const EventPlannerMock: React.FC = () => {
     () => [...getPaxListByAo("compass")],
     [paxDirectoryVersion]
   );
+
+  useEffect(() => {
+    getPaxDirectory()
+      .then((data) => {
+        if (data) {
+          setPaxDirectory(data);
+          bumpPaxDirectoryVersion();
+        }
+      })
+      .catch((error) => {
+        console.warn("PAX directory load failed for Event Planner:", error);
+      });
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -2050,15 +2069,25 @@ export const EventPlannerMock: React.FC = () => {
     <div className="space-y-4 pb-28 sm:pb-0">
       <section className={shellClass}>
         <div className="border-b border-slate-700 px-4 py-2.5 sm:px-5 sm:py-3">
-          <div className="space-y-1.5 sm:flex sm:flex-col sm:items-center sm:text-center">
-            <div className="min-w-0">
+          <div className="space-y-1.5 sm:flex sm:items-start sm:justify-between sm:text-left">
+            <div className="min-w-0 sm:flex-1">
               <h1 className="text-xl font-semibold text-white sm:text-[1.7rem]">
                 {eventOverview.title}
               </h1>
+              <div className="mt-1.5 flex flex-wrap gap-1.5 sm:justify-start">
+                <SummaryCard label="Date" value={eventOverview.dateLabel} />
+                <SummaryCard label="Countdown" value={countdownLabel} />
+              </div>
             </div>
-            <div className="flex flex-wrap gap-1.5 sm:justify-center">
-              <SummaryCard label="Date" value={eventOverview.dateLabel} />
-              <SummaryCard label="Countdown" value={countdownLabel} />
+            <div className="hidden sm:flex sm:flex-shrink-0 sm:justify-end">
+              <button
+                type="button"
+                disabled
+                className="min-h-[44px] rounded-md border border-slate-600 bg-slate-900/70 px-3 py-2 text-left text-sm text-slate-200 opacity-100"
+              >
+                <span className="text-[11px] uppercase tracking-[0.16em] text-slate-400">AO</span>
+                <span className="ml-2 font-semibold text-white">Compass</span>
+              </button>
             </div>
           </div>
         </div>

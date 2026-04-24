@@ -36,8 +36,20 @@ const app = initializeApp(firebaseConfig);
 // Enable App Check debug mode ONLY in local dev
 // This prevents enforcement from breaking localhost later
 if (import.meta.env.DEV) {
-  // Firebase will print a debug token in the browser console
-  (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+  const explicitDebugToken = import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN as
+    | string
+    | undefined;
+
+  if (explicitDebugToken) {
+    (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN = explicitDebugToken;
+  } else if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    // Firebase will print a debug token in the browser console
+    (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+  } else {
+    console.warn(
+      "[AppCheck] Missing VITE_FIREBASE_APPCHECK_DEBUG_TOKEN and crypto.randomUUID() is unavailable."
+    );
+  }
 }
 
 const siteKey = import.meta.env.VITE_RECAPTCHA_V3_SITE_KEY as string | undefined;
