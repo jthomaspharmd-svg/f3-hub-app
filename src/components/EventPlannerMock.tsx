@@ -11,7 +11,7 @@ import {
   setDoc,
   writeBatch,
 } from "firebase/firestore";
-import { PAX_LIST, THANG_EXERCISES, WARMUP_EXERCISES } from "../constants";
+import { getPaxListByAo, THANG_EXERCISES, WARMUP_EXERCISES } from "../constants";
 import { db } from "../firebase";
 import { createId } from "../utils/ids";
 import {
@@ -73,8 +73,6 @@ type PaxAssignment = {
 
 type TabKey = "leadership" | "workout" | "food" | "logistics" | "pax";
 type SignupGroup = "food" | "logistics";
-
-const paxOptions = [...PAX_LIST];
 
 const tabs: {
   key: TabKey;
@@ -580,27 +578,6 @@ const ActionButton: React.FC<{
   );
 };
 
-const PaxSelect: React.FC<{
-  value: SignupValue;
-  onChange: (value: SignupValue) => void;
-  disabled?: boolean;
-  placeholder?: string;
-}> = ({ value, onChange, disabled = false, placeholder = "Open" }) => (
-  <select
-    value={value}
-    onChange={(event) => onChange(event.target.value)}
-    disabled={disabled}
-    className={`${inputClass} ${disabled ? "cursor-not-allowed opacity-70" : ""}`}
-  >
-    <option value="">{placeholder}</option>
-    {paxOptions.map((pax) => (
-      <option key={pax} value={pax}>
-        {pax}
-      </option>
-    ))}
-  </select>
-);
-
 const StatusSelect: React.FC<{
   value: StatusValue;
   onChange: (value: StatusValue) => void;
@@ -676,6 +653,8 @@ export const EventPlannerMock: React.FC = () => {
     if (daysRemaining <= 0) return "Event week";
     return `${daysRemaining} Days`;
   }, []);
+
+  const paxOptions = useMemo(() => [...getPaxListByAo("compass")], []);
 
   useEffect(() => {
     let isMounted = true;
