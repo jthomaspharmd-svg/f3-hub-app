@@ -1326,8 +1326,16 @@ export const EventPlannerMock: React.FC = () => {
     field: keyof SignupItem,
     value: string
   ) => {
+    const sections = group === "food" ? foodSections : logisticsSections;
     const setter = group === "food" ? setFoodSections : setLogisticsSections;
-    let nextItemForWrite: SignupItem | null = null;
+    const section = sections.find((entry) => entry.id === sectionId);
+    const existingItem = section?.items.find((item) => item.id === itemId);
+    if (!existingItem) return;
+
+    const nextItemForWrite: SignupItem = { ...existingItem, [field]: value };
+    if (field === "qtyNeeded") {
+      nextItemForWrite.assignees = normalizeAssignees(value, existingItem.assignees);
+    }
 
     setter((current) =>
       current.map((section) => {
@@ -1335,19 +1343,11 @@ export const EventPlannerMock: React.FC = () => {
         return {
           ...section,
           items: section.items.map((item) => {
-            if (item.id !== itemId) return item;
-            const nextItem = { ...item, [field]: value };
-            if (field === "qtyNeeded") {
-              nextItem.assignees = normalizeAssignees(value, item.assignees);
-            }
-            nextItemForWrite = nextItem;
-            return nextItem;
+            return item.id === itemId ? nextItemForWrite : item;
           }),
         };
       })
     );
-
-    if (!nextItemForWrite) return;
 
     void setDoc(
       doc(getSignupItemsCollection(group, sectionId), itemId),
@@ -1369,8 +1369,14 @@ export const EventPlannerMock: React.FC = () => {
     index: number,
     value: SignupValue
   ) => {
+    const sections = group === "food" ? foodSections : logisticsSections;
     const setter = group === "food" ? setFoodSections : setLogisticsSections;
-    let nextAssignees: SignupValue[] | null = null;
+    const section = sections.find((entry) => entry.id === sectionId);
+    const existingItem = section?.items.find((item) => item.id === itemId);
+    if (!existingItem) return;
+
+    const nextAssignees = normalizeAssignees(existingItem.qtyNeeded, existingItem.assignees);
+    nextAssignees[index] = value;
 
     setter((current) =>
       current.map((section) => {
@@ -1378,17 +1384,11 @@ export const EventPlannerMock: React.FC = () => {
         return {
           ...section,
           items: section.items.map((item) => {
-            if (item.id !== itemId) return item;
-            const assignees = normalizeAssignees(item.qtyNeeded, item.assignees);
-            assignees[index] = value;
-             nextAssignees = assignees;
-            return { ...item, assignees };
+            return item.id === itemId ? { ...item, assignees: nextAssignees } : item;
           }),
         };
       })
     );
-
-    if (!nextAssignees) return;
 
     void setDoc(
       doc(getSignupItemsCollection(group, sectionId), itemId),
