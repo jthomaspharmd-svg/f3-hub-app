@@ -79,6 +79,11 @@ type PaxAssignment = {
 
 type TabKey = "leadership" | "workout" | "food" | "logistics" | "pax";
 type SignupGroup = "food" | "logistics";
+type DraggedSignupItem = {
+  group: SignupGroup;
+  sectionId: string;
+  itemId: string;
+};
 
 const tabs: {
   key: TabKey;
@@ -650,6 +655,7 @@ export const EventPlannerMock: React.FC = () => {
   const [logisticsSectionIds, setLogisticsSectionIds] = useState<string[]>([]);
   const [isPlannerReady, setIsPlannerReady] = useState(false);
   const [draggedLeadershipRoleId, setDraggedLeadershipRoleId] = useState<string | null>(null);
+  const [draggedSignupItem, setDraggedSignupItem] = useState<DraggedSignupItem | null>(null);
   const [selectedPaxName, setSelectedPaxName] = useState("");
   const [isPaxFilterOpen, setIsPaxFilterOpen] = useState(false);
 
@@ -953,9 +959,25 @@ export const EventPlannerMock: React.FC = () => {
 
   const logisticsSummary = useMemo(() => {
     const items = logisticsSections.flatMap((section) => section.items);
+    const slotSummary = items.reduce(
+      (totals, item) => {
+        const slots = normalizeAssignees(item.qtyNeeded, item.assignees);
+
+        if (item.status === "Locked") {
+          totals.filled += slots.filter(Boolean).length;
+          return totals;
+        }
+
+        totals.filled += slots.filter(Boolean).length;
+        totals.open += slots.filter((value) => !value).length;
+        return totals;
+      },
+      { open: 0, filled: 0 }
+    );
+
     return {
-      open: items.filter((item) => resolveSignupStatus(item) === "Open").length,
-      check: items.filter((item) => resolveSignupStatus(item) === "Check").length,
+      open: slotSummary.open,
+      filled: slotSummary.filled,
       total: items.length,
     };
   }, [logisticsSections]);
@@ -1380,6 +1402,50 @@ export const EventPlannerMock: React.FC = () => {
     });
   };
 
+  const moveSignupItem = (
+    group: SignupGroup,
+    sectionId: string,
+    draggedItemId: string,
+    targetItemId: string
+  ) => {
+    if (draggedItemId === targetItemId) return;
+
+    const sections = group === "food" ? foodSections : logisticsSections;
+    const setter = group === "food" ? setFoodSections : setLogisticsSections;
+    const section = sections.find((entry) => entry.id === sectionId);
+    if (!section) return;
+
+    const draggedIndex = section.items.findIndex((item) => item.id === draggedItemId);
+    const targetIndex = section.items.findIndex((item) => item.id === targetItemId);
+    if (draggedIndex < 0 || targetIndex < 0) return;
+
+    const reorderedItems = [...section.items];
+    const [draggedItemRecord] = reorderedItems.splice(draggedIndex, 1);
+    reorderedItems.splice(targetIndex, 0, draggedItemRecord);
+
+    setter((current) =>
+      current.map((entry) =>
+        entry.id === sectionId ? { ...entry, items: reorderedItems } : entry
+      )
+    );
+
+    void (async () => {
+      try {
+        const batch = writeBatch(db);
+        reorderedItems.forEach((item, index) => {
+          batch.set(
+            doc(getSignupItemsCollection(group, sectionId), item.id),
+            { order: index, updatedAt: serverTimestamp() },
+            { merge: true }
+          );
+        });
+        await batch.commit();
+      } catch (error) {
+        console.error(`Failed to reorder ${group} items for ${sectionId}:`, error);
+      }
+    })();
+  };
+
   const renderLeadershipTab = () => (
     <section className={shellClass}>
       <div className="flex items-start justify-between gap-3 border-b border-slate-700 px-3 py-2.5 sm:flex-col sm:items-center sm:justify-center sm:px-4 sm:py-3">
@@ -1686,7 +1752,41 @@ export const EventPlannerMock: React.FC = () => {
                       const assignees = normalizeAssignees(item.qtyNeeded, item.assignees);
 
                       return (
-                        <tr key={item.id} className="border-t border-slate-700 align-top">
+                        <tr
+                          key={item.id}
+                          draggable
+                          onDragStart={() =>
+                            setDraggedSignupItem({
+                              group: "food",
+                              sectionId: section.id,
+                              itemId: item.id,
+                            })
+                          }
+                          onDragOver={(event) => event.preventDefault()}
+                          onDrop={() => {
+                            if (
+                              draggedSignupItem &&
+                              draggedSignupItem.group === "food" &&
+                              draggedSignupItem.sectionId === section.id
+                            ) {
+                              moveSignupItem(
+                                "food",
+                                section.id,
+                                draggedSignupItem.itemId,
+                                item.id
+                              );
+                            }
+                            setDraggedSignupItem(null);
+                          }}
+                          onDragEnd={() => setDraggedSignupItem(null)}
+                          className={`border-t border-slate-700 align-top ${
+                            draggedSignupItem?.group === "food" &&
+                            draggedSignupItem.sectionId === section.id &&
+                            draggedSignupItem.itemId === item.id
+                              ? "opacity-50"
+                              : ""
+                          }`}
+                        >
                           <td className="w-[160px] min-w-[160px] max-w-[160px] px-1.5 py-2 pr-2 sm:px-2 sm:pr-2 xl:w-auto xl:min-w-0 xl:max-w-none">
                             <input
                               value={item.item}
@@ -1786,7 +1886,7 @@ export const EventPlannerMock: React.FC = () => {
             Open <span className="font-semibold text-white">{logisticsSummary.open}</span>
           </span>
           <span className="rounded-md border border-slate-600 bg-slate-900/70 px-2 py-1 text-slate-300">
-            Review <span className="font-semibold text-white">{logisticsSummary.check}</span>
+            Filled <span className="font-semibold text-white">{logisticsSummary.filled}</span>
           </span>
         </div>
       </div>
@@ -1797,17 +1897,18 @@ export const EventPlannerMock: React.FC = () => {
               {(() => {
                 const sectionSummary = section.items.reduce(
                   (totals, item) => {
-                    const status = resolveSignupStatus(item);
+                    const slots = normalizeAssignees(item.qtyNeeded, item.assignees);
 
-                    if (status === "Check") {
-                      totals.check += 1;
-                    } else if (status === "Open") {
-                      totals.open += 1;
+                    if (item.status === "Locked") {
+                      totals.filled += slots.filter(Boolean).length;
+                      return totals;
                     }
 
+                    totals.filled += slots.filter(Boolean).length;
+                    totals.open += slots.filter((value) => !value).length;
                     return totals;
                   },
-                  { open: 0, check: 0 }
+                  { open: 0, filled: 0 }
                 );
 
                 return (
@@ -1815,7 +1916,7 @@ export const EventPlannerMock: React.FC = () => {
                 <div className="min-w-0 sm:text-center">
                   <h3 className="text-base font-semibold text-white">{section.title}</h3>
                   <div className="mt-1 text-xs text-slate-400">
-                    Open {sectionSummary.open} · Review {sectionSummary.check}
+                    Open {sectionSummary.open} · Filled {sectionSummary.filled}
                   </div>
                 </div>
                 <button
@@ -1846,7 +1947,41 @@ export const EventPlannerMock: React.FC = () => {
                       const assignees = normalizeAssignees(item.qtyNeeded, item.assignees);
 
                       return (
-                        <tr key={item.id} className="border-t border-slate-700 align-top">
+                        <tr
+                          key={item.id}
+                          draggable
+                          onDragStart={() =>
+                            setDraggedSignupItem({
+                              group: "logistics",
+                              sectionId: section.id,
+                              itemId: item.id,
+                            })
+                          }
+                          onDragOver={(event) => event.preventDefault()}
+                          onDrop={() => {
+                            if (
+                              draggedSignupItem &&
+                              draggedSignupItem.group === "logistics" &&
+                              draggedSignupItem.sectionId === section.id
+                            ) {
+                              moveSignupItem(
+                                "logistics",
+                                section.id,
+                                draggedSignupItem.itemId,
+                                item.id
+                              );
+                            }
+                            setDraggedSignupItem(null);
+                          }}
+                          onDragEnd={() => setDraggedSignupItem(null)}
+                          className={`border-t border-slate-700 align-top ${
+                            draggedSignupItem?.group === "logistics" &&
+                            draggedSignupItem.sectionId === section.id &&
+                            draggedSignupItem.itemId === item.id
+                              ? "opacity-50"
+                              : ""
+                          }`}
+                        >
                           <td className="w-[168px] min-w-[168px] max-w-[168px] px-1.5 py-2 pr-2 sm:px-2 sm:pr-2 xl:w-auto xl:min-w-0 xl:max-w-none">
                             <input
                               value={item.item}
