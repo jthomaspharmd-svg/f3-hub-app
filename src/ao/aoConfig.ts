@@ -57,7 +57,7 @@ export const AO_CONFIG: Record<AoId, AoConfig> = {
     shortName: "Compass",
     displayName: "Compass at Lost Creek",
     whereName: "Lost Creek Park",
-    address: "3703 Lost Creek Blvd, Sugar Land, TX 77479",
+    address: "3703 Lost Creek Blvd, Sugar Land 77479",
 
     // ✅ Correct per-day time blocks
     scheduleBlocks: [
@@ -75,7 +75,7 @@ export const AO_CONFIG: Record<AoId, AoConfig> = {
 
     bandPostUrl: "https://www.band.us/band/94185591/post",
     reportUrl:
-      "https://lookerstudio.google.com/embed/reporting/f13d2066-eb12-4d9e-89fe-7b6113a5c884/page/p_annf64ba2d",
+      "https://datastudio.google.com/embed/reporting/f13d2066-eb12-4d9e-89fe-7b6113a5c884/page/p_7cgzsdfu2d",
     qSheet: {
       tinyUrl: undefined,
       googleSheetUrl: undefined,

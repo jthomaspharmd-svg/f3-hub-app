@@ -20,7 +20,7 @@ export const AoSelector: React.FC<{ compact?: boolean }> = ({ compact = false })
   onChange={(e) => setActiveAoId(e.target.value as AoId)}
   className={`bg-slate-700 border border-slate-600 rounded-md py-1 px-2 text-white text-sm hover:bg-slate-600 truncate ${
     compact
-      ? "max-w-[110px] sm:max-w-[150px]"
+      ? "max-w-[140px] sm:max-w-[150px]"
       : "w-auto max-w-[48vw] sm:w-[190px]"
   }`}
 >

@@ -56,6 +56,35 @@ interface BackblastGeneratorViewProps {
   clearImportedPlan: () => void;
 }
 
+type SectionInputMode = "list" | "notes" | "both";
+
+const MobileSectionToggle: React.FC<{
+  title: string;
+  subtitle?: string;
+  expanded: boolean;
+  onToggle: () => void;
+}> = ({ title, subtitle, expanded, onToggle }) => {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="sm:hidden w-full rounded-md border border-slate-600 bg-slate-700/70 px-3 py-3 text-left"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-white">{title}</div>
+          {subtitle ? (
+            <div className="mt-0.5 text-xs text-slate-400">{subtitle}</div>
+          ) : null}
+        </div>
+        <span className="text-slate-400" aria-hidden="true">
+          {expanded ? "▴" : "▾"}
+        </span>
+      </div>
+    </button>
+  );
+};
+
 /* -------------------------------------------------
    Helpers: date/time + hashtags
 ------------------------------------------------- */
@@ -360,6 +389,98 @@ const renumberRounds = (rounds: WorkoutRound[]) =>
 /* -------------------- Helper: compact optional string -------------------- */
 const compactOptionalString = (s?: string) => (s ?? "").trim();
 
+const buildWarmupSectionText = (
+  warmup: Exercise[],
+  warmupNotes: string,
+  mode: SectionInputMode,
+  formatExercise: (e: Exercise) => string
+) => {
+  const notes = compactOptionalString(warmupNotes);
+  const exerciseLines = warmup.map(formatExercise);
+  const includeNotes = mode === "notes" || mode === "both";
+  const includeList = mode === "list" || mode === "both";
+  const lines: string[] = [];
+
+  if (includeNotes && notes) lines.push(notes);
+  if (includeNotes && notes && includeList && exerciseLines.length) lines.push("");
+  if (includeList && exerciseLines.length) lines.push(...exerciseLines);
+
+  return lines.join("\n").trim() || "As dictated by the Q.";
+};
+
+const summarizeStructuredThang = (
+  rounds: WorkoutRound[],
+  formatExercise: (e: Exercise) => string
+) => {
+  const cleaned = rounds.filter((r: any) => {
+    const hasExercises = ((r.exercises || []) as any[]).length > 0;
+    const hasDesc = compactOptionalString(r.description);
+    return hasExercises || hasDesc;
+  });
+
+  if (!cleaned.length) return "A glorious beatdown ensued.";
+
+  return cleaned
+    .map((round: any, i: number) => {
+      const totalSeconds = round.timerSeconds ?? 0;
+      const mins = Math.floor(totalSeconds / 60);
+      const secs = totalSeconds % 60;
+
+      let timeLabel = "";
+      if (totalSeconds > 0) {
+        timeLabel = `${mins} minutes`;
+        if (secs > 0) timeLabel += ` ${secs} seconds`;
+        if (round.timerRepeatCount && round.timerRepeatCount > 1) {
+          timeLabel += ` × ${round.timerRepeatCount} rounds`;
+        }
+      }
+
+      const hasMultipleRounds = cleaned.length > 1;
+      const title = hasMultipleRounds
+        ? timeLabel
+          ? `**${round.name || `Round ${i + 1}`}** — ${timeLabel}`
+          : `**${round.name || `Round ${i + 1}`}**`
+        : timeLabel;
+
+      const descRaw = compactOptionalString(round.description)
+        ? String(round.description).trim()
+        : "";
+
+      const exercises = (round.exercises || []).map(formatExercise).join("\n");
+
+      if (!exercises && descRaw) return descRaw;
+
+      const desc = descRaw ? `${descRaw}\n` : "";
+      const body = exercises || "As called by the Q.";
+      return title ? `${title}\n${desc}${body}` : `${desc}${body}`;
+    })
+    .join("\n\n");
+};
+
+const buildThangSectionText = (
+  rounds: WorkoutRound[],
+  thangNotes: string,
+  mode: SectionInputMode,
+  formatExercise: (e: Exercise) => string
+) => {
+  const notes = compactOptionalString(thangNotes);
+  const list = summarizeStructuredThang(rounds, formatExercise);
+  const hasStructuredRounds = rounds.some((round: any) => {
+    const hasExercises = ((round.exercises || []) as any[]).length > 0;
+    const hasDesc = compactOptionalString(round.description);
+    return hasExercises || hasDesc;
+  });
+  const includeNotes = mode === "notes" || mode === "both";
+  const includeList = mode === "list" || mode === "both";
+  const lines: string[] = [];
+
+  if (includeNotes && notes) lines.push(notes);
+  if (includeNotes && notes && includeList && hasStructuredRounds) lines.push("");
+  if (includeList && hasStructuredRounds) lines.push(list);
+
+  return lines.join("\n").trim() || "A glorious beatdown ensued.";
+};
+
 /* -------------------- Helpers: normalize pax names (UI vs output) -------------------- */
 /** UI/storage should be WITHOUT "@", but generated output should INCLUDE "@". */
 const stripAt = (name: string) => String(name || "").trim().replace(/^@+/, "");
@@ -574,13 +695,13 @@ const PaxRowStandard: React.FC<{
   usedNames: Set<string>;
 }> = ({ pax, updatePax, removePax, paxList, usedNames }) => {
   const [isCustom, setIsCustom] = useState(
-    pax.name !== "" && !paxList.includes(stripAt(pax.name))
+    !!(pax as any).isCustom || (pax.name !== "" && !paxList.includes(stripAt(pax.name)))
   );
   const [showExtras, setShowExtras] = useState(!!pax.bigfoot || !!pax.starsky);
 
   useEffect(() => {
     const clean = stripAt(pax.name);
-    setIsCustom(clean !== "" && !paxList.includes(clean));
+    setIsCustom(!!(pax as any).isCustom || (clean !== "" && !paxList.includes(clean)));
   }, [pax.name, paxList]);
   useEffect(() => {
     if (pax.bigfoot || pax.starsky) setShowExtras(true);
@@ -606,6 +727,7 @@ const PaxRowStandard: React.FC<{
             value={pax.name}
             onChange={(e) => updatePax(pax.id, "name", stripAt(e.target.value))}
             placeholder="Custom PAX"
+            autoFocus={!pax.name}
             className="w-28 sm:w-32 md:w-36 lg:w-40 min-w-0 bg-slate-700 border border-slate-600 rounded-md py-1 px-2 text-white text-xs sm:text-sm"
           />
         ) : (
@@ -1094,9 +1216,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
   const [endTime24, setEndTime24] = useState(parsedEnd || "07:00");
 
   // Standard (non-JP) pax
-  const [paxAttendance, setPaxAttendance] = useState<PaxAttendance[]>([
-    { id: uuidv4(), name: "", bd: true, dd: false, td: false, bigfoot: false, starsky: false },
-  ]);
+  const [paxAttendance, setPaxAttendance] = useState<PaxAttendance[]>([]);
 
   // JP split pax
   const [jpRunPax, setJpRunPax] = useState<JpPaxRunRuck[]>([
@@ -1129,10 +1249,13 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
 
   const [warmup, setWarmup] = useState<Exercise[]>([]);
   const [warmupDescription, setWarmupDescription] = useState("");
+  const [warmupMode, setWarmupMode] = useState<SectionInputMode>("list");
 
   const [theThang, setTheThang] = useState<WorkoutRound[]>([
     { id: uuidv4(), name: "Round 1", exercises: [] },
   ]);
+  const [thangMode, setThangMode] = useState<SectionInputMode>("list");
+  const [thangNotes, setThangNotes] = useState("");
 
   const [announcements, setAnnouncements] = useState("");
   const [taps, setTaps] = useState("");
@@ -1162,6 +1285,11 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
   const [thangMultiOpen, setThangMultiOpen] = useState<Record<string, boolean>>({});
   const [thangSelected, setThangSelected] = useState<Record<string, string[]>>({});
   const [generatedText, setGeneratedText] = useState("");
+  const [isMobilePaxExpanded, setIsMobilePaxExpanded] = useState(true);
+  const [isMobileWarmupExpanded, setIsMobileWarmupExpanded] = useState(false);
+  const [isMobileThangExpanded, setIsMobileThangExpanded] = useState(false);
+  const [isMobileWrapExpanded, setIsMobileWrapExpanded] = useState(false);
+  const [isMobileAiExpanded, setIsMobileAiExpanded] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState("");
@@ -1178,6 +1306,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
 
   const isQNameFromList = paxList.includes(stripAt(qName));
   const outputRef = useRef<HTMLDivElement | null>(null);
+  const paxSectionRef = useRef<HTMLDivElement | null>(null);
   const dateInputRef = useRef<HTMLInputElement | null>(null);
   const startTimeInputRef = useRef<HTMLInputElement | null>(null);
   const endTimeInputRef = useRef<HTMLInputElement | null>(null);
@@ -1218,11 +1347,8 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
     if (exists) return;
 
     setPaxAttendance((prev) => {
-      const onlyEmpty =
-        prev.length === 1 && !stripAt(prev[0]?.name || "").trim();
-      const base = onlyEmpty ? [] : prev;
       return [
-        ...base,
+        ...prev,
         {
           id: uuidv4(),
           name: cleaned,
@@ -1330,6 +1456,13 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
       if (typeof saved.warmupDescription === "string") {
         setWarmupDescription(saved.warmupDescription);
       }
+      if (
+        saved.warmupMode === "list" ||
+        saved.warmupMode === "notes" ||
+        saved.warmupMode === "both"
+      ) {
+        setWarmupMode(saved.warmupMode);
+      }
 
       if (Array.isArray(saved.theThang)) {
         setTheThang(
@@ -1343,6 +1476,16 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
             }))
           )
         );
+      }
+      if (
+        saved.thangMode === "list" ||
+        saved.thangMode === "notes" ||
+        saved.thangMode === "both"
+      ) {
+        setThangMode(saved.thangMode);
+      }
+      if (typeof saved.thangNotes === "string") {
+        setThangNotes(saved.thangNotes);
       }
 
       if (typeof saved.announcements === "string") setAnnouncements(saved.announcements);
@@ -1418,7 +1561,10 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
       jpMpcPax: jpMpcPax.map((p) => normalizeMpc(p)),
       warmup,
       warmupDescription,
+      warmupMode,
       theThang,
+      thangMode,
+      thangNotes,
       announcements,
       taps,
       notes,
@@ -1451,7 +1597,10 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
     jpMpcPax,
     warmup,
     warmupDescription,
+    warmupMode,
     theThang,
+    thangMode,
+    thangNotes,
     announcements,
     taps,
     notes,
@@ -1517,6 +1666,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
 
     setWarmup((planToImport as any).warmup);
     setWarmupDescription((planToImport as any).warmupDescription || "");
+    setWarmupMode("list");
 
     setTheThang(
       renumberRounds(
@@ -1529,17 +1679,37 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
         }))
       )
     );
+    setThangMode("list");
+    setThangNotes("");
 
     clearImportedPlan();
   }, [planToImport, clearImportedPlan, paxList]);
 
   /* ----------------- Add/Remove/Modify Handlers ----------------- */
   // Standard (non-JP)
-  const addPax = () =>
+  const addCustomPax = () =>
     setPaxAttendance((prev) => [
       ...prev,
-      { id: uuidv4(), name: "", bd: true, dd: false, td: false, bigfoot: false, starsky: false } as any,
+      {
+        id: uuidv4(),
+        name: "",
+        bd: true,
+        dd: false,
+        td: false,
+        bigfoot: false,
+        starsky: false,
+        isCustom: true,
+      } as any,
     ]);
+
+  const addPax = addCustomPax;
+
+  const getKnownSelectedPaxFromAttendance = () => {
+    const knownPax = new Set(paxList.map((name) => stripAt(name).toLowerCase()));
+    return paxAttendance
+      .map((p: any) => stripAt(p.name).trim())
+      .filter((name) => knownPax.has(name.toLowerCase()));
+  };
 
   const addPaxByName = (nameRaw: string) => {
     const cleaned = stripAt(nameRaw).trim();
@@ -1569,11 +1739,37 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
   };
 
   const addSelectedPax = () => {
-    if (!selectedPax.length) return;
-    if (paxAttendance.length === 1 && !stripAt(paxAttendance[0]?.name || "")) {
-      setPaxAttendance([]);
-    }
-    selectedPax.forEach((name) => addPaxByName(name));
+    const selectedLower = new Set(selectedPax.map((name) => name.toLowerCase()));
+    const knownPax = new Set(paxList.map((name) => stripAt(name).toLowerCase()));
+
+    setPaxAttendance((prev) => {
+      const next = prev.filter((p: any) => {
+        const cleaned = stripAt(p.name).trim().toLowerCase();
+        if (!cleaned) return false;
+        if (!knownPax.has(cleaned)) return true;
+        return selectedLower.has(cleaned);
+      });
+
+      selectedPax.forEach((name) => {
+        const cleaned = stripAt(name).trim();
+        const exists = next.some(
+          (p: any) => stripAt(p.name).toLowerCase() === cleaned.toLowerCase()
+        );
+        if (!exists) {
+          next.push({
+            id: uuidv4(),
+            name: cleaned,
+            bd: true,
+            dd: false,
+            td: false,
+            bigfoot: false,
+            starsky: false,
+          } as any);
+        }
+      });
+
+      return next;
+    });
     setSelectedPax([]);
     setIsMultiAddOpen(false);
   };
@@ -2270,49 +2466,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
   };
 
   const formatThang = (rounds: WorkoutRound[]) => {
-    const cleaned = rounds.filter((r: any) => {
-      const hasExercises = ((r.exercises || []) as any[]).length > 0;
-      const hasDesc = compactOptionalString(r.description);
-      return hasExercises || hasDesc;
-    });
-    if (!cleaned.length) return "A glorious beatdown ensued.";
-
-    return cleaned
-      .map((round: any, i: number) => {
-        const totalSeconds = round.timerSeconds ?? 0;
-        const mins = Math.floor(totalSeconds / 60);
-        const secs = totalSeconds % 60;
-
-        let timeLabel = "";
-        if (totalSeconds > 0) {
-          timeLabel = `${mins} minutes`;
-          if (secs > 0) timeLabel += ` ${secs} seconds`;
-          if (round.timerRepeatCount && round.timerRepeatCount > 1) {
-            timeLabel += ` × ${round.timerRepeatCount} rounds`;
-          }
-        }
-
-        const hasMultipleRounds = cleaned.length > 1;
-        const title = hasMultipleRounds
-          ? timeLabel
-            ? `**${round.name || `Round ${i + 1}`}** — ${timeLabel}`
-            : `**${round.name || `Round ${i + 1}`}**`
-          : timeLabel;
-
-        const descRaw = compactOptionalString(round.description)
-          ? String(round.description).trim()
-          : "";
-
-        const exercises = (round.exercises || []).map(formatExercise).join("\n");
-
-        // If only a description was provided, output it without a round header.
-        if (!exercises && descRaw) return descRaw;
-
-        const desc = descRaw ? `${descRaw}\n` : "";
-        const body = exercises || "As called by the Q.";
-        return title ? `${title}\n${desc}${body}` : `${desc}${body}`;
-      })
-      .join("\n\n");
+    return summarizeStructuredThang(rounds, formatExercise);
   };
 
   // Standard non-JP pax formatting
@@ -2532,7 +2686,10 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
     pax: PaxAttendance[];
     warmup: Exercise[];
     warmupDescription: string;
+    warmupMode: SectionInputMode;
     thang: WorkoutRound[];
+    thangMode: SectionInputMode;
+    thangNotes: string;
     announcements: string;
     taps: string;
     styleSeed: string;
@@ -2541,7 +2698,12 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
     const totalPax = args.pax.filter((p: any) => !p.starsky).length;
     const cleanQName = stripAt(args.qName);
     const paxSection = formatPaxSectionStandard(args.pax);
-    const thangSection = formatThang(args.thang);
+    const thangSection = buildThangSectionText(
+      args.thang,
+      args.thangNotes,
+      args.thangMode,
+      formatExercise
+    );
     const emoji = buildEmojiMap(args.styleSeed, args.useEmojis);
     const aoLabel = emoji.ao ? `${emoji.ao}AO` : "AO";
     const dateLabel = emoji.date ? `${emoji.date}Date` : "Date";
@@ -2554,14 +2716,12 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
       ? `${emoji.count}Count O Rama`
       : "Count O Rama";
 
-    const warmupLines: string[] = [];
-    if (compactOptionalString(args.warmupDescription)) {
-      warmupLines.push(`${args.warmupDescription.trim()}`);
-      warmupLines.push("");
-    }
-    const warmupExercises = args.warmup.map(formatExercise).join("\n");
-    if (warmupExercises) warmupLines.push(warmupExercises);
-    const warmupSection = warmupLines.join("\n");
+    const warmupSection = buildWarmupSectionText(
+      args.warmup,
+      args.warmupDescription,
+      args.warmupMode,
+      formatExercise
+    );
 
     const styleSeed = buildStyleSeed();
     const useEmojis = shouldUseEmojis(
@@ -3121,9 +3281,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
     const parsed = parseTimeRangeTo24(defaultWorkout.time);
     setStartTime24(parsed.start || "06:00");
     setEndTime24(parsed.end || "07:00");
-    setPaxAttendance([
-      { id: uuidv4(), name: "", bd: true, dd: false, td: false, bigfoot: false, starsky: false },
-    ]);
+    setPaxAttendance([]);
     setJpRunPax([
       normalizeRunRuck({
         id: uuidv4(),
@@ -3153,7 +3311,10 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
     ]);
     setWarmup([]);
     setWarmupDescription("");
+    setWarmupMode("list");
     setTheThang([{ id: uuidv4(), name: "Round 1", exercises: [] }]);
+    setThangMode("list");
+    setThangNotes("");
     setAnnouncements("");
     setTaps("");
     setNotes("");
@@ -3171,6 +3332,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
     });
     setSelectedPax([]);
     setIsMultiAddOpen(false);
+    setIsSingleAddOpen(false);
     setJpRunSelected([]);
     setJpRuckSelected([]);
     setJpMpcSelected([]);
@@ -3181,6 +3343,11 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
     setWarmupSelected([]);
     setThangMultiOpen({});
     setThangSelected({});
+    setIsMobilePaxExpanded(true);
+    setIsMobileWarmupExpanded(false);
+    setIsMobileThangExpanded(false);
+    setIsMobileWrapExpanded(false);
+    setIsMobileAiExpanded(false);
     setGeneratedText("");
     setIsLoading(false);
     setLoadingStatus("");
@@ -3290,7 +3457,10 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
         : validStandardPax.map((p: any) => ({ ...p, name: addAt(p.name) })),
       warmup,
       warmupDescription,
+      warmupMode,
       theThang,
+      thangMode,
+      thangNotes,
       announcements,
       taps,
       notes: notesWithAoContext,
@@ -3400,7 +3570,10 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
           pax: validStandardPax,
           warmup,
           warmupDescription,
+          warmupMode,
           thang: theThang,
+          thangMode,
+          thangNotes,
           announcements,
           taps,
           styleSeed,
@@ -3465,7 +3638,10 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
           pax: validStandardPax,
           warmup,
           warmupDescription,
+          warmupMode,
           thang: theThang,
+          thangMode,
+          thangNotes,
           announcements,
           taps,
           styleSeed,
@@ -3554,10 +3730,109 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
   /* ===================================================================
      COMPONENT RENDER
   ==================================================================== */
+  const renderBackblastPreview = (text: string) => {
+    const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+    return lines.map((line, idx) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        return <div key={`line-${idx}`} className="h-3" />;
+      }
+
+      const isHashtagLine = trimmed.startsWith("#");
+      const isCallout = trimmed.startsWith("***") && trimmed.endsWith("***");
+      const isSectionLabel = /^(AO|Date\/Time|Q|PAX|Disclaimer|Count O Rama|Warmup|The Thang|Announcements|TAPS|TD|DD|BD)/i.test(
+        trimmed
+      );
+
+      return (
+        <div
+          key={`line-${idx}`}
+          className={`whitespace-pre-wrap ${
+            isHashtagLine
+              ? "text-sky-300"
+              : isCallout
+              ? "text-amber-200 font-semibold"
+              : isSectionLabel
+              ? "text-slate-100 font-semibold"
+              : "text-slate-200"
+          }`}
+        >
+          {line}
+        </div>
+      );
+    });
+  };
+
+  const warmupExerciseCount = warmup.filter((ex) => compactOptionalString(ex.name)).length;
+  const thangRoundCount = theThang.filter((round: any) => {
+    const hasExercises = ((round.exercises || []) as any[]).length > 0;
+    const hasDesc = compactOptionalString(round.description);
+    return hasExercises || hasDesc;
+  }).length;
+  const thangExerciseCount = theThang.reduce(
+    (total, round) =>
+      total +
+      (round.exercises || []).filter((ex) => compactOptionalString(ex.name)).length,
+    0
+  );
+  const aiSelectionCount = Object.values(aiOptions).filter(Boolean).length;
   const totalPaxDisplay = isJP ? countJpTotal() : countStandardTotal();
+  const paxSummary = isJP
+    ? `${totalPaxDisplay} total • ${jpRunPax.filter((p) => stripAt(p.name)).length} run • ${jpRuckPax.filter((p) => stripAt(p.name)).length} ruck`
+    : `${totalPaxDisplay} total • ${paxAttendance.filter((p) => p.bd && stripAt(p.name) && !p.starsky).length} BD • ${paxAttendance.filter((p) => (p.dd || p.td) && stripAt(p.name) && !p.starsky).length} DD/TD`;
+  const warmupSummary =
+    warmupMode === "notes"
+      ? compactOptionalString(warmupDescription)
+        ? "Notes only"
+        : "No warmup notes yet"
+      : warmupMode === "both"
+      ? compactOptionalString(warmupDescription)
+        ? `${warmupExerciseCount} exercises + notes`
+        : `${warmupExerciseCount} exercises`
+      : `${warmupExerciseCount} exercises`;
+  const thangSummary =
+    thangMode === "notes"
+      ? compactOptionalString(thangNotes)
+        ? "Notes only"
+        : "No thang notes yet"
+      : thangMode === "both"
+      ? compactOptionalString(thangNotes)
+        ? `${thangRoundCount} rounds • ${thangExerciseCount} exercises + notes`
+        : `${thangRoundCount} rounds • ${thangExerciseCount} exercises`
+      : `${thangRoundCount} rounds • ${thangExerciseCount} exercises`;
+  const wrapSummary = [
+    compactOptionalString(announcements) ? "Announcements" : "",
+    compactOptionalString(taps) ? "TAPS" : "",
+  ]
+    .filter(Boolean)
+    .join(" • ") || "Announcements and TAPS";
+  const aiSummary = generateMode === "AI"
+    ? aiSelectionCount > 0
+      ? `${aiSelectionCount} options selected`
+      : "Tone and style controls"
+    : undefined;
+  const scrollPaxSectionIntoView = () => {
+    if (typeof window === "undefined" || window.innerWidth >= 640) return;
+
+    window.setTimeout(() => {
+      paxSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 100);
+  };
+  const handleToggleMobilePax = () => {
+    setIsMobilePaxExpanded((prev) => !prev);
+  };
+  const handleOpenMultiAddPax = () => {
+    setIsMobilePaxExpanded(true);
+    setSelectedPax(getKnownSelectedPaxFromAttendance());
+    setIsMultiAddOpen(true);
+    scrollPaxSectionIntoView();
+  };
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in pb-24 sm:pb-0">
       <div className="flex items-center gap-2 mb-4">
         <DocumentTextIcon className="h-6 w-6 text-red-500 shrink-0" />
         <h2 className="text-lg sm:text-xl font-display text-white tracking-wide truncate">
@@ -3570,21 +3845,18 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
         <div className="bg-slate-800/50 rounded-lg shadow-2xl p-6 border border-slate-700 space-y-4">
           {/* AO DETAILS */}
           <div className="bg-slate-900/60 border border-slate-700 rounded-md p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="font-semibold text-sm text-slate-200 truncate">
-                {backblastAoLabel}
-              </div>
-              <div className="flex items-center gap-2 whitespace-nowrap">
-                <span className="text-xs text-slate-400">Change AO:</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-slate-400 shrink-0">Change AO:</span>
+              <div className="min-w-0 flex-1 sm:flex-none">
                 <AoSelector compact />
-                <button
-                  type="button"
-                  onClick={handleClearDraft}
-                  className="text-sm font-semibold text-slate-200 bg-slate-700/70 border border-slate-600 rounded-md px-2 py-1 hover:bg-slate-600/70"
-                >
-                  Clear Draft
-                </button>
               </div>
+              <button
+                type="button"
+                onClick={handleClearDraft}
+                className="text-sm font-semibold text-slate-200 bg-slate-700/70 border border-slate-600 rounded-md px-2 py-1 hover:bg-slate-600/70 shrink-0"
+              >
+                Clear Draft
+              </button>
             </div>
           </div>
 
@@ -3638,7 +3910,6 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
                 className="mt-2 w-full min-h-[44px] bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-white text-sm"
               />
             )}
-            <p className="mt-1 text-xs text-slate-400">Must fill in Q.</p>
           </div>
 
           {/* DATE + TIME */}
@@ -3748,20 +4019,27 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
           </div>
 
           {/* PAX */}
-          <div className="pt-4 border-t border-slate-700/60">
-            <h3 className="text-sm font-bold text-slate-300 mb-2 flex items-center gap-2">
+          <div ref={paxSectionRef} className="pt-4 border-t border-slate-700/60">
+            <h3 className="hidden sm:flex text-sm font-bold text-slate-300 mb-2 items-center gap-2">
               <UserGroupIcon /> PAX Attendance ({totalPaxDisplay})
             </h3>
+            <MobileSectionToggle
+              title="PAX Attendance"
+              subtitle={paxSummary}
+              expanded={isMobilePaxExpanded}
+              onToggle={handleToggleMobilePax}
+            />
 
+            <div className={`${isMobilePaxExpanded ? "block" : "hidden sm:block"} mt-3 sm:mt-0`}>
             {!isJP ? (
               <>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setIsMultiAddOpen(true)}
+                    onClick={handleOpenMultiAddPax}
                     className="text-sm text-slate-300 hover:text-white flex items-center gap-1"
                   >
-                    <PlusCircleIcon /> Quick Add Multiple PAX
+                    <PlusCircleIcon /> Add Common AO PAX
                   </button>
                 </div>
 
@@ -3771,7 +4049,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
                       <span>Select multiple PAX</span>
                       <span>Selected: {selectedPax.length}</span>
                     </div>
-                    <div className="max-h-48 overflow-y-auto">
+                    <div className="max-h-72 overflow-y-auto">
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                         {paxList.map((name) => {
                           const active = selectedPax.some(
@@ -3781,19 +4059,20 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
                             (p: any) =>
                               stripAt(p.name).toLowerCase() === name.toLowerCase()
                           );
+                          const disabled = alreadyAdded && !active;
                           return (
                             <button
                               key={name}
                               type="button"
                               onClick={() => {
-                                if (!alreadyAdded) toggleSelectedPax(name);
+                                if (!disabled) toggleSelectedPax(name);
                               }}
-                              disabled={alreadyAdded}
+                              disabled={disabled}
                               className={`px-2 py-1.5 rounded-md text-xs text-left border transition-colors ${
-                                alreadyAdded
-                                  ? "bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed"
-                                  : active
+                                active
                                   ? "bg-blue-600 text-white border-blue-500"
+                                  : disabled
+                                  ? "bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed"
                                   : "bg-slate-700/60 text-slate-200 border-slate-600 hover:bg-slate-600/60"
                               }`}
                             >
@@ -3801,21 +4080,26 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
                             </button>
                           );
                         })}
+                        <button
+                          type="button"
+                          onClick={addPax}
+                          className="px-2 py-1.5 rounded-md text-xs text-left border border-dashed border-sky-500/50 bg-sky-500/10 text-sky-100 hover:bg-sky-500/20"
+                        >
+                          Custom
+                        </button>
                       </div>
                     </div>
                     <div className="flex gap-2">
                       <button
                         type="button"
                         onClick={addSelectedPax}
-                        disabled={selectedPax.length === 0}
                         className="flex-1 bg-blue-600 text-white font-semibold py-2 px-3 rounded-md hover:bg-blue-700 disabled:bg-slate-600"
                       >
-                        Add PAX
+                        Update PAX
                       </button>
                       <button
                         type="button"
                         onClick={() => {
-                          setSelectedPax([]);
                           setIsMultiAddOpen(false);
                         }}
                         className="flex-1 bg-slate-700 text-white font-semibold py-2 px-3 rounded-md hover:bg-slate-600"
@@ -3850,7 +4134,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
                   onClick={addPax}
                   className="text-sm text-red-400 hover:text-red-300 mt-2 flex items-center gap-1"
                 >
-                  <PlusCircleIcon /> Add Individual PAX
+                  <PlusCircleIcon /> Add Custom PAX
                 </button>
               </>
             ) : (
@@ -4140,6 +4424,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
                 </div>
               </div>
             )}
+            </div>
           </div>
 
           {/* WARMUP + THANG (hidden for Jurassic Park) */}
@@ -4147,31 +4432,59 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
             <div className="pt-4 border-t border-slate-700/60 space-y-4">
               {/* WARMUP */}
               <div>
-                <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="hidden sm:flex items-center justify-between gap-2 mb-2">
                   <h3 className="text-sm font-bold text-slate-300">Warmup</h3>
 
                   <button
                     type="button"
                     onClick={() => setIsWarmupDescOpen((v) => !v)}
                     className="flex items-center gap-0 px-1 py-1 rounded transition-colors text-xs text-slate-300 hover:text-sky-400 whitespace-nowrap"
-                    title="Add warmup description (optional)"
+                    title="Paste or edit warmup notes"
                   >
                     <span className="text-base leading-none">📝</span>
                     <span className="leading-none">
                       {compactOptionalString(warmupDescription)
-                        ? "Edit Description"
-                        : "Add Description"}
+                        ? "Edit Notes"
+                        : "Paste Notes"}
                     </span>
                   </button>
                 </div>
+                <MobileSectionToggle
+                  title="Warmup"
+                  subtitle={warmupSummary}
+                  expanded={isMobileWarmupExpanded}
+                  onToggle={() => setIsMobileWarmupExpanded((prev) => !prev)}
+                />
 
-                {isWarmupDescOpen && (
+                <div className={`${isMobileWarmupExpanded ? "block" : "hidden sm:block"} mt-3 sm:mt-0`}>
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    {([
+                      { value: "list", label: "Exercise List" },
+                      { value: "notes", label: "Paste Notes" },
+                      { value: "both", label: "Both" },
+                    ] as const).map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setWarmupMode(option.value)}
+                        className={`rounded-md border px-3 py-2 text-xs sm:text-sm font-semibold transition-colors ${
+                          warmupMode === option.value
+                            ? "bg-blue-600 text-white border-blue-500"
+                            : "bg-slate-700/60 text-slate-200 border-slate-600 hover:bg-slate-600/60"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+
+                {warmupMode !== "list" && isWarmupDescOpen && (
                   <div className="bg-slate-800/60 border border-slate-700 rounded-md p-2 mb-2">
                     <textarea
-                      rows={2}
+                      rows={4}
                       value={warmupDescription}
                       onChange={(e) => setWarmupDescription(e.target.value)}
-                      placeholder="Optional warmup description (e.g., mosey to the flag, dynamic stretches, etc.)"
+                      placeholder="Paste warmup notes from your phone or type your own summary."
                       className="w-full bg-slate-900 border border-slate-700 rounded-md py-2 px-3 text-white text-sm"
                       onKeyDown={(e) => e.stopPropagation()}
                       onMouseDown={(e) => e.stopPropagation()}
@@ -4189,18 +4502,32 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
                   </div>
                 )}
 
-                {compactOptionalString(warmupDescription) && !isWarmupDescOpen && (
+                {warmupMode !== "list" &&
+                  compactOptionalString(warmupDescription) &&
+                  !isWarmupDescOpen && (
                   <button
                     type="button"
                     onClick={() => setIsWarmupDescOpen(true)}
                     className="w-full text-left bg-slate-800/60 border border-slate-700 rounded-md px-3 py-2 mb-2 text-sm text-slate-200 hover:border-sky-500/60"
-                    title="Click to edit warmup description"
+                    title="Click to edit warmup notes"
                   >
                     <span className="text-slate-400 mr-2">📝</span>
                     {warmupDescription}
                   </button>
                 )}
 
+                {warmupMode !== "list" && !compactOptionalString(warmupDescription) && (
+                  <button
+                    type="button"
+                    onClick={() => setIsWarmupDescOpen(true)}
+                    className="w-full rounded-md border border-dashed border-slate-600 bg-slate-900/30 px-3 py-3 text-left text-xs text-slate-300 hover:border-sky-500/60"
+                  >
+                    Paste warmup notes from phone
+                  </button>
+                )}
+
+                {warmupMode !== "notes" && (
+                  <>
                 <button
                   type="button"
                   onClick={() => setIsWarmupMultiOpen((v) => !v)}
@@ -4288,12 +4615,62 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
                 >
                   <PlusCircleIcon /> Add Individual Exercise
                 </button>
+                  </>
+                )}
+                </div>
               </div>
 
               {/* THE THANG */}
               <div>
-                <h3 className="text-sm font-bold text-slate-300 mb-2">The Thang</h3>
+                <h3 className="hidden sm:block text-sm font-bold text-slate-300 mb-2">
+                  The Thang
+                </h3>
+                <MobileSectionToggle
+                  title="The Thang"
+                  subtitle={thangSummary}
+                  expanded={isMobileThangExpanded}
+                  onToggle={() => setIsMobileThangExpanded((prev) => !prev)}
+                />
 
+                <div className={`${isMobileThangExpanded ? "block" : "hidden sm:block"} mt-3 sm:mt-0`}>
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    {([
+                      { value: "list", label: "Exercise List" },
+                      { value: "notes", label: "Paste Notes" },
+                      { value: "both", label: "Both" },
+                    ] as const).map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setThangMode(option.value)}
+                        className={`rounded-md border px-3 py-2 text-xs sm:text-sm font-semibold transition-colors ${
+                          thangMode === option.value
+                            ? "bg-blue-600 text-white border-blue-500"
+                            : "bg-slate-700/60 text-slate-200 border-slate-600 hover:bg-slate-600/60"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {thangMode !== "list" && (
+                    <div className="mb-3 space-y-2">
+                      <label className="block text-xs sm:text-sm font-bold text-slate-300">
+                        The Thang Notes
+                      </label>
+                      <textarea
+                        rows={5}
+                        value={thangNotes}
+                        onChange={(e) => setThangNotes(e.target.value)}
+                        placeholder="Paste thang notes from your phone or type a freeform recap of the work."
+                        className="w-full bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-white text-sm"
+                      />
+                    </div>
+                  )}
+
+                {thangMode !== "notes" && (
+                  <>
                 <DndContext
                   sensors={sensors}
                   modifiers={[restrictToVerticalAxis, restrictToParentElement]}
@@ -4524,47 +4901,77 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
                 >
                   <PlusCircleIcon /> Add Next Round
                 </button>
+                  </>
+                )}
+                </div>
               </div>
             </div>
           )}
 
           {/* ANNOUNCEMENTS */}
           <div className="pt-4 border-t border-slate-700/60">
-            <label className="block text-sm font-bold text-slate-300 mb-2">
-              Announcements
-            </label>
-            <textarea
-              rows={2}
-              value={announcements}
-              onChange={(e) => setAnnouncements(e.target.value)}
-              className="w-full bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-white text-sm"
+            <h3 className="hidden sm:block text-sm font-bold text-slate-300 mb-2">
+              Wrap-Up
+            </h3>
+            <MobileSectionToggle
+              title="Wrap-Up"
+              subtitle={wrapSummary}
+              expanded={isMobileWrapExpanded}
+              onToggle={() => setIsMobileWrapExpanded((prev) => !prev)}
             />
-          </div>
+            <div className={`${isMobileWrapExpanded ? "block" : "hidden sm:block"} mt-3 sm:mt-0 space-y-4`}>
+              <div>
+                <label className="block text-sm font-bold text-slate-300 mb-2">
+                  Announcements
+                </label>
+                <textarea
+                  rows={2}
+                  value={announcements}
+                  onChange={(e) => setAnnouncements(e.target.value)}
+                  className="w-full bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-white text-sm"
+                />
+              </div>
 
-          {/* TAPS */}
-          <div className="pt-4 border-t border-slate-700/60">
-            <label className="block text-sm font-bold text-slate-300 mb-2">
-              TAPS
-            </label>
-            <textarea
-              rows={2}
-              value={taps}
-              onChange={(e) => setTaps(e.target.value)}
-              className="w-full bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-white text-sm"
-            />
+              <div>
+                <label className="block text-sm font-bold text-slate-300 mb-2">
+                  TAPS
+                </label>
+                <textarea
+                  rows={2}
+                  value={taps}
+                  onChange={(e) => setTaps(e.target.value)}
+                  className="w-full bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-white text-sm"
+                />
+              </div>
+            </div>
           </div>
 
           {/* GENERATE MODE */}
           <div className="pt-4 border-t border-slate-700/60 space-y-3">
             {!forceNoAiAo && (
               <>
+                <h3 className="hidden sm:block text-sm font-bold text-slate-300">
+                  Generate
+                </h3>
+                <MobileSectionToggle
+                  title="Generate"
+                  subtitle={aiSummary}
+                  expanded={isMobileAiExpanded}
+                  onToggle={() => setIsMobileAiExpanded((prev) => !prev)}
+                />
+              </>
+            )}
+            <div
+              className={`${
+                forceNoAiAo || isMobileAiExpanded ? "block" : "hidden sm:block"
+              } mt-3 sm:mt-0 space-y-3`}
+            >
+            {!forceNoAiAo && (
+              <>
                 <div className="text-sm font-bold text-slate-300">
                   Include AI Written Commentary?{" "}
                   <span className="text-red-400">*</span>
                 </div>
-                {!generateMode && (
-                  <div className="text-xs text-slate-400">Must choose one.</div>
-                )}
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
@@ -4662,6 +5069,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
                 version.
               </div>
             )}
+            </div>
           </div>
 
           {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
@@ -4670,7 +5078,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
         {/* ---------------- OUTPUT PANEL ---------------- */}
         <div
           ref={outputRef}
-          className="bg-slate-800/50 rounded-lg shadow-2xl p-6 border border-slate-700 flex flex-col"
+          className="bg-slate-800/50 rounded-lg shadow-2xl p-4 sm:p-6 border border-slate-700 flex flex-col"
         >
           <div className="mb-4">
             <div className="flex items-center gap-2">
@@ -4711,15 +5119,21 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
             </div>
           )}
 
-          <div className="bg-slate-900 p-4 rounded-md flex-grow min-h-[300px] whitespace-pre-wrap text-slate-300 font-mono overflow-y-auto">
-            {generatedText}
+          <div className="bg-slate-900 p-4 rounded-md flex-grow min-h-[240px] sm:min-h-[300px] text-sm leading-relaxed overflow-y-auto">
+            {generatedText ? (
+              renderBackblastPreview(generatedText)
+            ) : (
+              <div className="text-sm text-slate-500">
+                Generate a backblast to preview the final post here.
+              </div>
+            )}
           </div>
 
           {generatedText && (
             <div className="mt-4">
               <button
                 onClick={handleCopyAndPost}
-                className="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 flex items-center justify-center gap-2"
+                className="hidden sm:flex w-full bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 items-center justify-center gap-2"
               >
                 <ExternalLinkIcon />
                 {copySuccess ? "Copied! Opening BAND..." : "Copy & Start Post in BAND"}
@@ -4728,6 +5142,26 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
           )}
         </div>
       </div>
+      {generatedText && (
+        <div className="sm:hidden fixed left-1/2 bottom-28 z-10 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 rounded-2xl border border-slate-700 bg-slate-950/95 px-3 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => (generateMode === "AI" ? handleGenerateAI() : handleFormatNoAI())}
+              className="min-h-[48px] rounded-md border border-slate-600 bg-slate-800 px-3 text-sm font-semibold text-slate-100"
+            >
+              {generatedText ? "Regenerate" : "Generate"}
+            </button>
+            <button
+              type="button"
+              onClick={handleCopyAndPost}
+              className="min-h-[48px] rounded-md bg-green-600 px-3 text-sm font-semibold text-white"
+            >
+              {copySuccess ? "Copied! Opening BAND..." : "Copy & Start Post"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

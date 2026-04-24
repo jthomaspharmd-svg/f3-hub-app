@@ -226,90 +226,71 @@ export const generatePreblast = async (
 
   const ai = await getGenAiClient();
 
-  // ✅ Pull AO details from config
   const ao = getAoById(aoId);
-
-  // ---- If your aoConfig uses different field names, adjust here:
-  const aoHashtags = ao.hashtags ?? [];
-  const extraHashtagsByAo: string[] = [];
-  if (aoId === "thehill" && isFridayFromDateString(workoutDate)) {
-    extraHashtagsByAo.push("#hillybillyshuffle");
-  }
   const whereLine = (ao as any).whereLine ?? ao.displayName ?? "AO";
-  const addressLine = (ao as any).addressLine ?? "";
-  // ------------------------------------------------------------
-
-  const hashtagLine = buildHashtags(
-    [...aoHashtags, ...extraHashtagsByAo, ...(extraHashtags || [])],
-    "preblast"
-  );
-
-  const isSaturday = workoutDate.toLowerCase().includes("sat");
-  const earlyBird = {
-    dd: "DD (Comment Below)",
-    td: "TD (Comment Below)",
-  };
-
-  const toBringList =
-    toBring.length > 0 ? toBring.join(", ") : "Just your gloom-hating self.";
-
-  const preblastContent = `
-💪Q: ${qName}
-📍WHERE: ${whereLine}
-${addressLine ? addressLine : ""}
-🗓️Date/Time: ${workoutDate} (${workoutTime})
-${earlyBird.dd}
-${earlyBird.td}
-
-🎒 BRING: ${toBringList}
-  `.trim();
-
-  const preblastContentPlain = `
-Q: ${qName}
-WHERE: ${whereLine}
-${addressLine ? addressLine : ""}
-Date/Time: ${stripWeekdayFromDate(workoutDate)} (${workoutTime})
-${earlyBird.dd}
-${earlyBird.td}
-
-Bring: ${toBringList}
-  `.trim();
-
-  const finalPreblastContent = minimalEmojis
-    ? preblastContentPlain
-    : preblastContent;
+  const addressLine = (ao as any).addressLine ?? ao.address ?? "";
+  const meetLine = (ao as any).meetingPoint ?? "";
+  const toBringList = toBring.length > 0 ? toBring.join(", ") : "";
+  const isJP =
+    aoId === "jurassicpark" ||
+    `${ao.displayName || ""} ${ao.whereName || ""}`.toLowerCase().includes("jurassic");
+  const emojiRule = minimalEmojis
+    ? "Do not use emojis."
+    : "Emojis are optional, but keep them minimal and purposeful.";
 
   const prompt = `
-You are an F3 Pre-Blast generator.
+You are writing ONLY the short hook/call-to-action message for an F3 pre-blast.
 
-VOICE & POV (CRITICAL):
-- Write the hype intro in FIRST PERSON, as if **I am the Q** named "${
+OUTPUT RULES:
+- Return only the hook message text.
+- Do NOT output hashtags.
+- Do NOT output field labels or template lines such as Q:, AO:, WHERE:, Meet:, Address:, Date:, Time:, Date/Time:, DD:, TD:, or Bring:.
+- Do NOT sign off with the Q name.
+- Do NOT add markdown, bullets, section headers, or quote marks.
+- Write 2-4 sentences total.
+- Vary sentence rhythm and openings. Avoid repetitive church-bulletin phrasing and avoid sounding canned.
+- The final sentence should feel like a natural invitation to post up, not a robotic repeated tagline.
+- Do NOT mention the AO name, address, meeting point, workout date, or workout time in the hook. Those details are already rendered elsewhere in the post.
+- Avoid generic opener patterns such as "I'm ready to bring...", "I've got a high-energy beatdown...", "Come join me in the gloom...", or similar stock phrasing.
+- Do not simply say the workout will be high-energy, challenging, or effective. Show tone through the wording instead.
+
+VOICE & POV:
+- Write in FIRST PERSON, as if I am the Q named "${
     qName || "the Q"
   }".
-- Use "I" when describing what the Q is bringing/doing (e.g., "I'm bringing...", "I've got a beatdown...").
-- Use "we" or "the PAX" when talking about the group.
-- NEVER refer to the Q in third person (no "the Q is bringing...", no "he/she", and do NOT write "${qName} is bringing..." in narration).
-- Do not say "your workout" or "the Q's workout"—just write it like a real Q posting.
+- Use "I" for what the Q is bringing or leading.
+- Use "we" or "the PAX" for the group.
+- Never refer to the Q in third person.
+- Do not say "your workout" or "the Q's workout."
 
-CRITICAL RULES:
-1. The FIRST LINE MUST be: ${hashtagLine}
-2. The SECOND LINE MUST be blank.
-3. Write a hype intro (2–4 sentences) in first person (see POV rules above).
-4. End the intro with a short “HC below” call-to-action. It should mean: comment/HC if you’re attending. Do NOT require verbatim wording.
-5. Then show the pre-blast content exactly as provided (no edits).
+WORKOUT TYPE:
+${
+  isJP
+    ? [
+        "- This AO is a Sunday RUN/RUCK group.",
+        "- It is not a beatdown or calisthenics post.",
+        "- Lean into miles, movement, fellowship, and inviting all fitness levels.",
+      ].join("\n")
+    : [
+        "- This AO is a standard F3 beatdown/calisthenics workout and may include some running or rucking.",
+        "- Do not describe it as only a run or only a ruck unless the notes explicitly say that.",
+      ].join("\n")
+}
 
-IMPORTANT:
-You must NOT rewrite or reformat anything inside the Pre-Blast Content block.
-Print the Pre-Blast Content EXACTLY as provided (including line breaks, emojis, and spacing).
+TONE CONTROLS:
+${notes || "Keep it fresh, natural, and specific to the Q's intent."}
 
-SPECIAL RULE:
-Whenever you see "Little Baby Arm Circles", abbreviate it as "LBAC".
-
-Notes (use only to flavor the hype intro, not the content block):
-${notes || "A standard beatdown is expected."}
-
-Pre-Blast Content (print exactly, no changes):
-${finalPreblastContent}
+CONTEXT:
+- AO context for internal awareness only: ${whereLine}
+${addressLine ? `- Address: ${addressLine}` : ""}
+${meetLine ? `- Meet: ${meetLine}` : ""}
+- Workout Date: ${stripWeekdayFromDate(workoutDate)}
+- Workout Time: ${workoutTime}
+${toBringList ? `- Bring Items: ${toBringList}` : ""}
+- Selected extra hashtags (for awareness only, do not print them): ${
+    extraHashtags.length ? extraHashtags.join(" ") : "none"
+  }
+- ${emojiRule}
 `.trim();
 
   const response = await retryGeminiCall(() =>
@@ -494,6 +475,9 @@ interface BackblastData {
 
   // optional descriptions coming from planner/backblast editor
   warmupDescription?: string;
+  warmupMode?: "list" | "notes" | "both";
+  thangMode?: "list" | "notes" | "both";
+  thangNotes?: string;
 }
 
 const hasText = (v: unknown): v is string =>
@@ -518,6 +502,9 @@ export const generateBackblast = async (data: BackblastData): Promise<string> =>
     notes,
     minimalEmojis = false,
     warmupDescription,
+    warmupMode = "list",
+    thangMode = "list",
+    thangNotes,
   } = data;
 
   // ✅ Pull AO details from config
@@ -548,19 +535,36 @@ export const generateBackblast = async (data: BackblastData): Promise<string> =>
     return line;
   };
 
-  // Warmup: optional description printed above the first exercise
+  // Warmup: supports pasted notes, structured exercises, or both
   const warmupLines: string[] = [];
-  if (hasText(warmupDescription)) warmupLines.push(warmupDescription.trim());
-  if (hasText(warmupDescription) && warmup.length > 0) warmupLines.push("");
-  if (warmup.length > 0) warmupLines.push(...warmup.map(formatExercise));
+  const includeWarmupNotes = warmupMode === "notes" || warmupMode === "both";
+  const includeWarmupList = warmupMode === "list" || warmupMode === "both";
+  if (includeWarmupNotes && hasText(warmupDescription)) {
+    warmupLines.push(warmupDescription.trim());
+  }
+  if (
+    includeWarmupNotes &&
+    hasText(warmupDescription) &&
+    includeWarmupList &&
+    warmup.length > 0
+  ) {
+    warmupLines.push("");
+  }
+  if (includeWarmupList && warmup.length > 0) {
+    warmupLines.push(...warmup.map(formatExercise));
+  }
   const warmupSection = warmupLines.join("\n") || "As dictated by the Q.";
 
   // ------------------------------------------------------
   // THANG: TIMER LABELS NEXT TO ROUND NAME + ROUND DESCRIPTION
   // ------------------------------------------------------
-  const thangSection =
+  const structuredThang =
     theThang
-      .filter((r) => (r.exercises || []).length > 0)
+      .filter((r) => {
+        const hasExercises = (r.exercises || []).length > 0;
+        const hasDesc = hasText((r as any).description);
+        return hasExercises || hasDesc;
+      })
       .map((round, i) => {
         const totalSeconds = (round as any).timerSeconds ?? 0;
         const mins = Math.floor(totalSeconds / 60);
@@ -578,14 +582,33 @@ export const generateBackblast = async (data: BackblastData): Promise<string> =>
           ? `**${round.name || `Round ${i + 1}`}** — ${timeLabel}`
           : `**${round.name || `Round ${i + 1}`}**`;
 
-        const descLine = hasText((round as any).description)
-          ? `${String((round as any).description).trim()}\n`
+        const exercises = (round.exercises || []).map(formatExercise).join("\n");
+        const descText = hasText((round as any).description)
+          ? String((round as any).description).trim()
           : "";
 
-        const exercises = (round.exercises || []).map(formatExercise).join("\n");
-        return `${title}\n${descLine}${exercises}`;
+        if (!exercises && descText) return descText;
+
+        const descLine = descText ? `${descText}\n` : "";
+        const body = exercises || "As called by the Q.";
+        return `${title}\n${descLine}${body}`;
       })
-      .join("\n\n") || "A glorious beatdown ensued.";
+      .join("\n\n");
+
+  const thangLines: string[] = [];
+  const includeThangNotes = thangMode === "notes" || thangMode === "both";
+  const includeThangList = thangMode === "list" || thangMode === "both";
+  if (includeThangNotes && hasText(thangNotes)) thangLines.push(thangNotes.trim());
+  if (
+    includeThangNotes &&
+    hasText(thangNotes) &&
+    includeThangList &&
+    hasText(structuredThang)
+  ) {
+    thangLines.push("");
+  }
+  if (includeThangList && hasText(structuredThang)) thangLines.push(structuredThang);
+  const thangSection = thangLines.join("\n") || "A glorious beatdown ensued.";
 
   // ----------------------------
   // FORMAT PAX GROUPS

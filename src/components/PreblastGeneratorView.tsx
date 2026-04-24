@@ -113,6 +113,52 @@ const buildDdTdBlock = (style: LabelStyle) =>
     buildStyledFieldLine("", "TD:", "Comment Below", style),
   ].join("\n");
 
+const buildPreblastClosing = (styleSeed: string, qName: string) => {
+  const qClean = stripAt(qName) || "TBD";
+  const variants = [
+    ["SYITG", `-${qClean}`],
+    ["HC below."],
+    ["HC below.", "- SYITG!"],
+    ["SYITG"],
+    [`-${qClean}`],
+    [],
+  ];
+  const idx = hashSeed(`${styleSeed}:preblast-closing`) % variants.length;
+  return variants[idx].join("\n");
+};
+
+const shouldIncludeAoAddress = (aoId: string, styleSeed: string) => {
+  if (aoId !== "compass") return true;
+  return (hashSeed(`${styleSeed}:ao-address`) % 100) < 55;
+};
+
+const buildPreblastDateTimeBlock = (
+  styleSeed: string,
+  workoutDate: string,
+  workoutTime: string,
+  labelStyle: LabelStyle,
+  datePrefix: string
+) => {
+  const splitDateTime = (hashSeed(`${styleSeed}:date-time-layout`) % 100) < 40;
+  const cleanDate = stripWeekdayFromDate(workoutDate);
+  const timeEmoji = pickFrom(EMOJI_ROTATION.date, styleSeed, "time");
+  const timePrefix = datePrefix || (timeEmoji ? `${timeEmoji} ` : "");
+
+  if (splitDateTime) {
+    return [
+      buildStyledFieldLine(datePrefix, "Date:", cleanDate, labelStyle),
+      buildStyledFieldLine(timePrefix, "Time:", workoutTime, labelStyle),
+    ].join("\n");
+  }
+
+  return buildStyledFieldLine(
+    datePrefix,
+    "Date/Time:",
+    `${cleanDate} (${workoutTime})`,
+    labelStyle
+  );
+};
+
 const escapeRegExp = (value: string) =>
   String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -353,9 +399,11 @@ const isJurassicParkAo = (ao: {
 ------------------------------------------------- */
 const normalizeAiPreblast = (
   raw: string,
+  aoId: string,
   address: string,
   styleSeed: string,
-  useEmojis: boolean
+  useEmojis: boolean,
+  qName: string
 ): string => {
   const text = String(raw || "").replace(/\r\n/g, "\n");
   const labelStyle = pickLabelStyle(styleSeed);
@@ -423,22 +471,30 @@ const normalizeAiPreblast = (
   out = out.replace(/^\s*Weather\s*:[^\n]*\n?/gim, "");
   const addr = String(address || "").trim();
   if (addr) {
+    const includeAoAddress = shouldIncludeAoAddress(aoId, styleSeed);
     // Remove any standalone address lines
     out = out.replace(/^\s*(?:📫\s*)?Address\s*:[^\n]*\n?/gim, "");
     out = out.replace(new RegExp(`^\\s*${escapeRegExp(addr)}\\s*$`, "gim"), "");
 
-    // Ensure AO/Where line includes address in parentheses
-    out = out.replace(
-      /^(📍\s*)?(AO|Where)\s*:\s*(.+)$/gim,
-      (m, p1, label, rest) => {
-        const restStr = String(rest || "").trim();
-        if (!restStr) return m;
-        if (restStr.toLowerCase().includes(addr.toLowerCase())) {
-          return `${p1 || ""}${label}: ${restStr}`;
+    if (includeAoAddress) {
+      // Ensure AO/Where line includes address in parentheses
+      out = out.replace(
+        /^(📍\s*)?(AO|Where)\s*:\s*(.+)$/gim,
+        (m, p1, label, rest) => {
+          const restStr = String(rest || "").trim();
+          if (!restStr) return m;
+          if (restStr.toLowerCase().includes(addr.toLowerCase())) {
+            return `${p1 || ""}${label}: ${restStr}`;
+          }
+          return `${p1 || ""}${label}: ${restStr} (${addr})`;
         }
-        return `${p1 || ""}${label}: ${restStr} (${addr})`;
-      }
-    );
+      );
+    } else {
+      out = out.replace(
+        new RegExp(`\\s*\\(${escapeRegExp(addr)}\\)`, "gi"),
+        ""
+      );
+    }
   }
 
   // Emoji rotation (if enabled)
@@ -461,6 +517,23 @@ const normalizeAiPreblast = (
     /^[^\S\r\n]*[\p{So}\uFE0F]*\s*(Date\/Time|Date)\s*:/gim,
     `${datePrefix}${formatStyledLabel("Date/Time:", labelStyle)}`
   );
+  if ((hashSeed(`${styleSeed}:date-time-layout`) % 100) < 40) {
+    out = out.replace(
+      /^(.*?)(?:Date\/Time|Date)\s*:\s*([^()\n]+?)\s*\(([^)\n]+)\)\s*$/gim,
+      (_m, prefix, datePart, timePart) =>
+        `${buildStyledFieldLine(
+          prefix,
+          "Date:",
+          String(datePart || "").trim(),
+          labelStyle
+        )}\n${buildStyledFieldLine(
+          "",
+          "Time:",
+          String(timePart || "").trim(),
+          labelStyle
+        ).trimStart()}`
+    );
+  }
   out = out.replace(
     /^[^\S\r\n]*[\p{So}\uFE0F]*\s*(?:Bring|What to Bring)\s*:/gim,
     `${bringPrefix}${formatStyledLabel(`${bringLabel}:`, labelStyle)}`
@@ -474,27 +547,18 @@ const normalizeAiPreblast = (
     `${useEmojis ? "📍 " : ""}${formatStyledLabel("Where:", labelStyle)}`
   );
 
-  // DD/TD variability (keep same meaning, change formatting)
-  const ddTdBlock = buildDdTdBlock(labelStyle);
-  if (ddTdBlock) {
-    const ddtdLines = ddTdBlock.split("\n");
-    const lines = out.split("\n");
-    const kept: string[] = [];
-    let insertAt = -1;
-    const isDdTdLine = (line: string) =>
-      /^\s*(DD|TD|DD\/TD|Double Down|Triple Down)\b/i.test(line.trim());
-
-    for (const line of lines) {
-      if (isDdTdLine(line)) {
-        if (insertAt === -1) insertAt = kept.length;
-        continue;
-      }
-      kept.push(line);
-    }
-    if (insertAt !== -1) {
-      kept.splice(insertAt, 0, ...ddtdLines);
-      out = kept.join("\n");
-    }
+  const closingBlock = buildPreblastClosing(styleSeed, qName);
+  if (closingBlock) {
+    const lines = out
+      .split("\n")
+      .filter(
+        (line) =>
+          !/^\s*(DD|TD|DD\/TD|Double Down|Triple Down)\b/i.test(line.trim())
+      );
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    lines.push("");
+    lines.push(...closingBlock.split("\n"));
+    out = lines.join("\n");
   }
 
   return out;
@@ -585,7 +649,10 @@ const formatJurassicParkNoAI = (args: {
     args.ao.whereName && args.ao.whereName !== args.ao.displayName
       ? `${args.ao.displayName} — ${args.ao.whereName}`
       : args.ao.displayName;
-  const addrSuffix = args.ao.address ? ` (${args.ao.address})` : "";
+  const addrSuffix =
+    args.ao.address && shouldIncludeAoAddress(args.ao.id, args.styleSeed)
+      ? ` (${args.ao.address})`
+      : "";
 
   const meetRaw = (args.ao.meetingPoint || "").trim();
   const meet =
@@ -751,6 +818,126 @@ const formatJurassicParkAI = (args: {
 };
 
 /* -------------------------------------------------
+   Standard AI Formatter (non-JP)
+------------------------------------------------- */
+const formatStandardAI = (args: {
+  qName: string;
+  workoutDate: string;
+  workoutTime: string;
+  bringItems: string[];
+  styleSeed: string;
+  useEmojis: boolean;
+  ao: {
+    id: string;
+    displayName: string;
+    whereName: string;
+    address: string;
+    meetingPoint?: string;
+    hashtags: string[];
+  };
+  aiMessage: string;
+  extraHashtags: string[];
+}) => {
+  const hashtags = buildHashtags(args.ao.hashtags || [], "preblast", {
+    aoId: args.ao.id,
+    workoutDate: args.workoutDate,
+    userHashtags: args.extraHashtags,
+  }).join(" ");
+
+  const whereLine =
+    args.ao.whereName && args.ao.whereName !== args.ao.displayName
+      ? `${args.ao.displayName} — ${args.ao.whereName}`
+      : args.ao.displayName;
+
+  const qEmoji = args.useEmojis
+    ? pickFrom(EMOJI_ROTATION.q, args.styleSeed, "q")
+    : "";
+  const dateEmoji = args.useEmojis
+    ? pickFrom(EMOJI_ROTATION.date, args.styleSeed, "date")
+    : "";
+  const bringEmoji = args.useEmojis
+    ? pickFrom(EMOJI_ROTATION.bring, args.styleSeed, "bring")
+    : "";
+  const qPrefix = args.useEmojis && qEmoji ? `${qEmoji} ` : "";
+  const datePrefix = args.useEmojis && dateEmoji ? `${dateEmoji} ` : "";
+  const bringPrefix = args.useEmojis && bringEmoji ? `${bringEmoji} ` : "";
+  const labelStyle = pickLabelStyle(args.styleSeed);
+  const bringLabel = pickBringLabel(args.styleSeed);
+
+  const bringLine = args.bringItems.length
+    ? buildStyledFieldLine(
+        bringPrefix,
+        `${bringLabel}:`,
+        args.bringItems.join(", "),
+        labelStyle
+      )
+    : "";
+
+  const addrSuffix =
+    args.ao.address && shouldIncludeAoAddress(args.ao.id, args.styleSeed)
+      ? ` (${args.ao.address})`
+      : "";
+  const closingBlock = buildPreblastClosing(args.styleSeed, args.qName);
+  const FALLBACKS = [
+    "Post up and put in the work with the PAX. I’ve got the beatdown covered and all fitness levels are welcome.",
+    "Come get better with me in the gloom. We’ll mix sweat, fellowship, and some good hard work.",
+    "Show up ready to move and chase some discomfort. I’ve got the plan, you just bring the effort.",
+  ];
+
+  const rawMsg = (args.aiMessage || "").trim();
+  const msg = rawMsg || FALLBACKS[Math.floor(Math.random() * FALLBACKS.length)];
+
+  const lines: string[] = [];
+
+  lines.push(hashtags);
+  lines.push("");
+  lines.push(msg);
+  lines.push("");
+  lines.push(
+    buildStyledFieldLine(
+      qPrefix,
+      "Q:",
+      stripAt(args.qName) || "TBD",
+      labelStyle
+    )
+  );
+  lines.push("");
+  lines.push(
+    buildStyledFieldLine(
+      args.useEmojis ? "📍 " : "",
+      "AO:",
+      `${whereLine}${addrSuffix}`,
+      labelStyle
+    )
+  );
+
+  if (args.ao.meetingPoint?.trim()) {
+    lines.push(
+      `${args.useEmojis ? "📌 " : ""}Meet: ${args.ao.meetingPoint.trim()}`
+    );
+  }
+
+  lines.push("");
+  lines.push(
+    buildPreblastDateTimeBlock(
+      args.styleSeed,
+      args.workoutDate,
+      args.workoutTime,
+      labelStyle,
+      datePrefix
+    )
+  );
+  if (bringLine) lines.push(bringLine);
+
+  if (closingBlock) {
+    lines.push("");
+    lines.push(closingBlock);
+  }
+
+  return lines.join("\n");
+};
+
+/* -------------------------------------------------
    Standard No-AI Formatter (non-JP) — your blank-line rules
 ------------------------------------------------- */
 const formatStandardNoAI = (args: {
@@ -806,7 +993,7 @@ const formatStandardNoAI = (args: {
     : "";
 
   const addrSuffix = args.ao.address ? ` (${args.ao.address})` : "";
-  const ddTdBlock = buildDdTdBlock(labelStyle);
+  const closingBlock = buildPreblastClosing(args.styleSeed, args.qName);
 
 
   const lines: string[] = [];
@@ -843,17 +1030,20 @@ const formatStandardNoAI = (args: {
 
   lines.push("");
   lines.push(
-    buildStyledFieldLine(
-      datePrefix,
-      "Date/Time:",
-      `${stripWeekdayFromDate(args.workoutDate)} (${args.workoutTime})`,
-      labelStyle
+    buildPreblastDateTimeBlock(
+      args.styleSeed,
+      args.workoutDate,
+      args.workoutTime,
+      labelStyle,
+      datePrefix
     )
   );
-  lines.push(ddTdBlock);
-  lines.push("");
-
   if (bringLine) lines.push(bringLine);
+
+  if (closingBlock) {
+    lines.push("");
+    lines.push(closingBlock);
+  }
 
   return lines.join("\n");
 };
@@ -917,6 +1107,33 @@ const QNameSelect: React.FC<{
 
       <option value="custom">-- Custom --</option>
     </select>
+  );
+};
+
+const MobileSectionToggle: React.FC<{
+  title: string;
+  subtitle?: string;
+  expanded: boolean;
+  onToggle: () => void;
+}> = ({ title, subtitle, expanded, onToggle }) => {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="sm:hidden w-full rounded-md border border-slate-600 bg-slate-700/70 px-3 py-3 text-left"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-white">{title}</div>
+          {subtitle ? (
+            <div className="mt-0.5 text-xs text-slate-400">{subtitle}</div>
+          ) : null}
+        </div>
+        <span className="text-slate-400" aria-hidden="true">
+          {expanded ? "▴" : "▾"}
+        </span>
+      </div>
+    </button>
   );
 };
 
@@ -995,6 +1212,8 @@ export const PreblastGeneratorView: React.FC = () => {
   const [extraHashtags, setExtraHashtags] = useState<string[]>([]);
   const [customHashtags, setCustomHashtags] = useState("");
   const [isMobileHashtagsExpanded, setIsMobileHashtagsExpanded] = useState(false);
+  const [isMobileBringExpanded, setIsMobileBringExpanded] = useState(false);
+  const [isMobileAiExpanded, setIsMobileAiExpanded] = useState(false);
   const [notes, setNotes] = useState("");
   const [generatedPreblastText, setGeneratedPreblastText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -1023,6 +1242,7 @@ export const PreblastGeneratorView: React.FC = () => {
   const geminiIntervalRef = useRef<number | null>(null);
 
   const outputRef = useRef<HTMLDivElement | null>(null);
+  const outputBottomRef = useRef<HTMLDivElement | null>(null);
   const dateInputRef = useRef<HTMLInputElement | null>(null);
   const startTimeInputRef = useRef<HTMLInputElement | null>(null);
   const endTimeInputRef = useRef<HTMLInputElement | null>(null);
@@ -1111,6 +1331,8 @@ export const PreblastGeneratorView: React.FC = () => {
     lastAoIdRef.current = activeAo.id;
     didRestoreRef.current = false;
     setIsMobileHashtagsExpanded(false);
+    setIsMobileBringExpanded(false);
+    setIsMobileAiExpanded(false);
     setWorkoutDate(defaultDate);
     setWorkoutTime(defaultTime);
     setDateInputValue(toIsoDate(defaultDate));
@@ -1168,6 +1390,14 @@ export const PreblastGeneratorView: React.FC = () => {
   useEffect(() => {
     if (!generatedPreblastText) return;
     const t = setTimeout(() => {
+      if (window.matchMedia("(max-width: 639px)").matches) {
+        const pageBottom = Math.max(
+          document.body.scrollHeight,
+          document.documentElement.scrollHeight
+        );
+        window.scrollTo({ top: pageBottom, behavior: "smooth" });
+        return;
+      }
       outputRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 100);
     return () => clearTimeout(t);
@@ -1188,7 +1418,7 @@ export const PreblastGeneratorView: React.FC = () => {
     const base =
       activeAo.id === "jurassicpark"
         ? []
-        : ["#1%better", "#ironsharpensiron", "#ruck"];
+        : ["#1%better", "#AQ", "#BQ", "#GQ", "#ironsharpensiron", "#ruck"];
     const aoOpts = (activeAo as any)?.optionalHashtags || [];
     const combined = normalizeHashtags([...base, ...aoOpts]);
     return combined.sort((a, b) =>
@@ -1218,6 +1448,11 @@ export const PreblastGeneratorView: React.FC = () => {
     return hashtagOptions.filter((t) => !defaultsLower.has(t.toLowerCase()));
   }, [defaultHashtags, hashtagOptions]);
 
+  const mobileOptionalHashtags = useMemo(
+    () => optionalHashtags.filter((tag) => tag.toLowerCase() !== "#ruck"),
+    [optionalHashtags]
+  );
+
   const combinedHashtags = useMemo(() => {
     const defaultSet = new Set(defaultHashtags.map((t) => t.toLowerCase()));
     const combined = [...defaultHashtags, ...optionalHashtags];
@@ -1226,6 +1461,19 @@ export const PreblastGeneratorView: React.FC = () => {
       isDefault: defaultSet.has(tag.toLowerCase()),
     }));
   }, [defaultHashtags, optionalHashtags]);
+
+  const mobileVisibleHashtags = useMemo(
+    () => normalizeHashtags([...defaultHashtags, ...normalizedExtraHashtags]),
+    [defaultHashtags, normalizedExtraHashtags]
+  );
+
+  const mobileSelectedBringCount = toBring.length + (customToBring.trim() ? 1 : 0);
+  const mobileSelectedAiCount = Object.values(aiOptions).filter(Boolean).length;
+  const mobileVisibleBringItems = useMemo(() => {
+    const items = [...toBring];
+    if (customToBring.trim()) items.push(customToBring.trim());
+    return Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
+  }, [toBring, customToBring]);
 
   const updateWorkoutTimeRange = (nextStart: string, nextEnd: string) => {
     if (nextStart && nextEnd) {
@@ -1256,15 +1504,28 @@ export const PreblastGeneratorView: React.FC = () => {
 
   const buildAiOptionsNotes = (suppressEmojis: boolean) => {
     const lines: string[] = [];
-    if (aiOptions.highEnergy) lines.push("Tone: high-energy.");
-    if (aiOptions.gratitude) lines.push("Include a short appreciation line.");
+    if (aiOptions.highEnergy)
+      lines.push(
+        "Tone: urgent, punchy, and energetic. Use strong action language, not generic hype."
+      );
+    if (aiOptions.gratitude)
+      lines.push(
+        "Include a brief appreciation note, but make it specific and grounded in the PAX showing up or putting in work. Avoid generic praise."
+      );
     if (aiOptions.missionValues)
-      lines.push("Include a short F3 values line (fitness, fellowship, faith).");
+      lines.push(
+        "Work in a short F3 values line focused on fitness, fellowship, or faith, but keep it natural and not preachy."
+      );
     if (aiOptions.minimalEmojis || forceNoEmojis || suppressEmojis)
       lines.push("Do not use emojis.");
-    if (aiOptions.funny) lines.push("Add a light funny line (PG-13, no vulgar).");
+    if (aiOptions.funny)
+      lines.push(
+        "Add a light funny line with some personality. Avoid canned dad-joke phrasing and avoid vulgarity."
+      );
     if (aiOptions.ironSharpensIron)
-      lines.push('Include a short "iron sharpens iron" fellowship line.');
+      lines.push(
+        'Include a short iron-sharpens-iron style line about men pushing each other to get better, without using the exact same stock wording every time.'
+      );
     return lines.join("\n");
   };
 
@@ -1341,7 +1602,7 @@ export const PreblastGeneratorView: React.FC = () => {
     );
     const aiOptionsNotes = buildAiOptionsNotes(!useEmojis);
 
-    // JP: strict "hook message only" instructions + CTA.
+    // AI should write only the hook/CTA. The app formats the full preblast.
     const strictNotes = isJP
       ? [
           "You are writing ONLY the short hook message for an F3 pre-blast (Jurassic Park).",
@@ -1402,16 +1663,27 @@ export const PreblastGeneratorView: React.FC = () => {
       setGeneratedPreblastText(finalText);
       markOutput("Generated by AI", "AI");
     } else {
-      // Non-JP: Gemini returns the full post. Normalize WHERE label.
-      const normalized = normalizeAiPreblast(
-        cleanedRaw,
-        activeAo.address || "",
+      const msg = extractInspirationalMessage(cleanedRaw);
+      const formatted = formatStandardAI({
+        qName: qDisplayName,
+        workoutDate,
+        workoutTime,
+        bringItems: items,
         styleSeed,
-        useEmojis
-      );
-      const finalText = stripMarkdownImageLines(
-        forceNoEmojis || !useEmojis ? stripEmojis(normalized) : normalized
-      );
+        useEmojis,
+        ao: {
+          id: activeAo.id,
+          displayName: preblastAoLabel,
+          whereName: preblastWhereName,
+          address: activeAo.address,
+          meetingPoint: activeAo.meetingPoint,
+          hashtags: activeAo.hashtags || [],
+        },
+        aiMessage: msg,
+        extraHashtags: normalizedExtraHashtags,
+      });
+      const finalText =
+        forceNoEmojis || !useEmojis ? stripEmojis(formatted) : formatted;
       setGeneratedPreblastText(finalText);
       markOutput("Generated by AI", "AI");
     }
@@ -1503,17 +1775,21 @@ export const PreblastGeneratorView: React.FC = () => {
       setTimeout(() => setCopySuccess(false), 2000);
     }
 
+    if (isMobile) {
+      const link = document.createElement("a");
+      link.href = bandUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setInfo("BAND should open in the app while keeping this page available in your browser.");
+      return;
+    }
+
     const newWin = window.open(bandUrl, "_blank", "noopener,noreferrer");
     if (newWin) {
       newWin.opener = null;
-
-      if (isMobile) {
-        setTimeout(() => {
-          try {
-            newWin.close();
-          } catch {}
-        }, 800);
-      }
       return;
     }
 
@@ -1524,7 +1800,7 @@ export const PreblastGeneratorView: React.FC = () => {
      UI
   ------------------------------------------------- */
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in pb-24 sm:pb-0">
       {/* PAGE HEADER */}
       <div className="flex items-center gap-2 mb-4">
         <MegaphoneIcon className="h-6 w-6 text-red-500 shrink-0" />
@@ -1535,15 +1811,15 @@ export const PreblastGeneratorView: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* LEFT PANEL */}
-        <div className="bg-slate-800/50 rounded-lg shadow-2xl p-6 border border-slate-700">
+        <div className="bg-slate-800/50 rounded-lg shadow-2xl p-4 sm:p-6 border border-slate-700">
           <div className="space-y-6">
             {/* AO DETAILS */}
             <div className="bg-slate-900/60 border border-slate-700 rounded-md p-3">
-              <div className="text-sm flex items-center justify-between gap-3 min-w-0">
-                <span className="font-bold text-slate-300 whitespace-nowrap">
+              <div className="text-sm flex items-center justify-between gap-2 min-w-0">
+                <span className="font-bold text-slate-300 whitespace-nowrap text-xs sm:text-sm">
                   Currently Selected AO:
                 </span>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1 sm:flex-none">
                   <AoSelector compact />
                 </div>
               </div>
@@ -1564,7 +1840,7 @@ export const PreblastGeneratorView: React.FC = () => {
 
             {/* Q */}
             <div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3">
                 <label className="text-sm font-bold text-slate-300 whitespace-nowrap">
                   Q <span className="text-red-400">*</span>
                 </label>
@@ -1572,7 +1848,6 @@ export const PreblastGeneratorView: React.FC = () => {
                   <QNameSelect value={qName} onChange={setQName} paxList={paxList} />
                 </div>
               </div>
-              <p className="mt-1 text-xs text-slate-400">Must fill in Q.</p>
             </div>
 
             {/* DATE / TIME */}
@@ -1686,48 +1961,26 @@ export const PreblastGeneratorView: React.FC = () => {
 
             {/* HASHTAGS */}
             <div className="pt-4 border-t border-slate-700/60">
-              <label className="block text-sm font-bold text-slate-300 mb-2">
-                Hashtags{" "}
-                <span className="text-xs font-normal text-slate-500">
-                  (Defaulted, update as needed)
-                </span>
+              <label className="hidden sm:block text-sm font-bold text-slate-300 mb-2">
+                Hashtags
               </label>
 
               <div className="space-y-3">
-                <div className="grid grid-cols-2 sm:hidden gap-2">
-                  {defaultHashtags.map((tag) => (
-                    <label
-                      key={`mobile-default-${tag}`}
-                      className="flex items-center gap-2 bg-slate-700 p-2 rounded-md text-xs"
-                    >
-                      <input
-                        type="checkbox"
-                        checked
-                        disabled
-                        className="h-5 w-5 text-red-600"
-                      />
-                      {tag}
-                    </label>
-                  ))}
-                </div>
+                <MobileSectionToggle
+                  title="Hashtags"
+                  expanded={isMobileHashtagsExpanded}
+                  onToggle={() => setIsMobileHashtagsExpanded((prev) => !prev)}
+                />
 
-                <div className="sm:hidden">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setIsMobileHashtagsExpanded((prev) => !prev)
-                    }
-                    className="w-full min-h-[44px] bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-left text-sm text-slate-200 hover:bg-slate-600 flex items-center justify-between gap-3"
-                  >
-                    <span>
-                      {isMobileHashtagsExpanded
-                        ? "Hide additional hashtag options"
-                        : "Add hashtags"}
+                <div className="flex flex-wrap gap-2 sm:hidden">
+                  {mobileVisibleHashtags.map((tag) => (
+                    <span
+                      key={`mobile-hashtag-${tag}`}
+                      className="inline-flex items-center rounded-full border border-slate-600 bg-slate-700/70 px-3 py-1.5 text-xs text-slate-200"
+                    >
+                      {tag}
                     </span>
-                    <span className="text-slate-400" aria-hidden="true">
-                      {isMobileHashtagsExpanded ? "▴" : "▾"}
-                    </span>
-                  </button>
+                  ))}
                 </div>
 
                 <div className="hidden sm:block">
@@ -1812,15 +2065,25 @@ export const PreblastGeneratorView: React.FC = () => {
                   )}
                 </div>
 
-                <div className={isMobileHashtagsExpanded ? "sm:hidden space-y-3" : "hidden sm:hidden"}>
-                  {optionalHashtags.length > 0 && (
+                <div
+                  className={
+                    isMobileHashtagsExpanded
+                      ? "sm:hidden space-y-3 rounded-md border border-slate-700 bg-slate-900/40 p-3"
+                      : "hidden sm:hidden"
+                  }
+                >
+                  {mobileOptionalHashtags.length > 0 && (
                     <div className="grid grid-cols-2 gap-2">
-                      {optionalHashtags.map((tag) => {
+                      {mobileOptionalHashtags.map((tag) => {
                         const checked = normalizedExtraHashtags.includes(tag);
                         return (
                           <label
                             key={`mobile-${tag}`}
-                            className="flex items-center gap-2 bg-slate-700 p-2 rounded-md text-xs hover:bg-slate-600"
+                            className={`flex items-center gap-2 rounded-md border p-2 text-xs ${
+                              checked
+                                ? "border-red-500/50 bg-red-500/10 text-white"
+                                : "border-slate-600 bg-slate-700 hover:bg-slate-600"
+                            }`}
                           >
                             <input
                               type="checkbox"
@@ -1856,8 +2119,15 @@ export const PreblastGeneratorView: React.FC = () => {
                 </div>
 
                 {normalizedExtraHashtags.length > 0 && (
-                  <div className="text-xs text-slate-300">
-                    Added: {normalizedExtraHashtags.join(" ")}
+                  <div className="hidden sm:flex flex-wrap gap-2 text-xs text-slate-300">
+                    {normalizedExtraHashtags.map((tag) => (
+                      <span
+                        key={`selected-${tag}`}
+                        className="inline-flex items-center rounded-full border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-slate-100"
+                      >
+                        {tag}
+                      </span>
+                    ))}
                   </div>
                 )}
               </div>
@@ -1866,13 +2136,44 @@ export const PreblastGeneratorView: React.FC = () => {
             {/* ITEMS TO BRING (hidden for Jurassic Park) */}
             {!isJP && (
               <div className="pt-4 border-t border-slate-700/60">
-                <h3 className="text-sm font-bold text-slate-300 mb-2">What to Bring?</h3>
+                <h3 className="hidden sm:block text-sm font-bold text-slate-300 mb-2">
+                  What to Bring
+                </h3>
+                <MobileSectionToggle
+                  title="What to Bring"
+                  subtitle={
+                    mobileSelectedBringCount > 0
+                      ? `${mobileSelectedBringCount} items selected`
+                      : undefined
+                  }
+                  expanded={isMobileBringExpanded}
+                  onToggle={() => setIsMobileBringExpanded((prev) => !prev)}
+                />
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="flex flex-wrap gap-2 sm:hidden">
+                  {mobileVisibleBringItems.map((item) => (
+                    <span
+                      key={`mobile-bring-${item}`}
+                      className="inline-flex items-center rounded-full border border-slate-600 bg-slate-700/70 px-3 py-1.5 text-xs text-slate-200"
+                    >
+                      {item}
+                    </span>
+                  ))}
+                </div>
+
+                <div
+                  className={`${
+                    isMobileBringExpanded ? "grid" : "hidden"
+                  } grid-cols-2 gap-2 sm:grid sm:grid-cols-4 mt-3 sm:mt-0`}
+                >
                   {commonItems.map((item) => (
                     <label
                       key={item}
-                      className="flex items-center gap-2 bg-slate-700 p-2 rounded-md text-xs sm:text-sm hover:bg-slate-600"
+                      className={`flex items-center gap-2 rounded-md border p-2 text-xs sm:text-sm ${
+                        toBring.includes(item)
+                          ? "border-blue-500/50 bg-blue-500/10 text-white"
+                          : "border-slate-600 bg-slate-700 hover:bg-slate-600"
+                      }`}
                     >
                       <input
                         type="checkbox"
@@ -1889,13 +2190,15 @@ export const PreblastGeneratorView: React.FC = () => {
                   ))}
                 </div>
 
-                <input
-                  type="text"
-                  value={customToBring}
-                  onChange={(e) => setCustomToBring(e.target.value)}
-                  placeholder="Other items..."
-                  className="mt-2 w-full min-h-[44px] bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-white text-xs sm:text-sm"
-                />
+                <div className={isMobileBringExpanded ? "mt-2 sm:mt-2" : "hidden sm:block"}>
+                  <input
+                    type="text"
+                    value={customToBring}
+                    onChange={(e) => setCustomToBring(e.target.value)}
+                    placeholder="Other items..."
+                    className="w-full min-h-[44px] bg-slate-700 border border-slate-600 rounded-md py-2 px-3 text-white text-xs sm:text-sm"
+                  />
+                </div>
               </div>
             )}
 
@@ -1944,11 +2247,26 @@ export const PreblastGeneratorView: React.FC = () => {
                     <div className="h-px bg-slate-700/70" />
                   )}
                   {generateMode === "AI" && (
-                    <div className="space-y-2">
-                      <div className="text-sm font-bold text-slate-300">
-                        AI Options
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
+                    <>
+                      <MobileSectionToggle
+                        title="Customize AI"
+                        subtitle={
+                          mobileSelectedAiCount > 0
+                            ? `${mobileSelectedAiCount} options selected`
+                            : "Tone and style controls"
+                        }
+                        expanded={isMobileAiExpanded}
+                        onToggle={() => setIsMobileAiExpanded((prev) => !prev)}
+                      />
+                      <div
+                        className={`space-y-2 ${
+                          isMobileAiExpanded ? "block" : "hidden"
+                        } sm:block`}
+                      >
+                        <div className="text-sm font-bold text-slate-300">
+                          AI Options
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
                         {[
                           { key: "gratitude", label: "Appreciation" },
                           { key: "missionValues", label: "F3 Mission/Values" },
@@ -1959,7 +2277,11 @@ export const PreblastGeneratorView: React.FC = () => {
                         ].map(({ key, label }) => (
                           <label
                             key={key}
-                            className="flex items-center gap-2 bg-slate-700/60 border border-slate-600 rounded-md px-2 py-2 text-xs sm:text-sm text-slate-200 cursor-pointer"
+                            className={`flex items-center gap-2 rounded-md border px-2 py-2 text-xs sm:text-sm cursor-pointer ${
+                              (aiOptions as any)[key]
+                                ? "border-red-500/50 bg-red-500/10 text-white"
+                                : "border-slate-600 bg-slate-700/60 text-slate-200"
+                            }`}
                           >
                             <input
                               type="checkbox"
@@ -1975,12 +2297,13 @@ export const PreblastGeneratorView: React.FC = () => {
                             {label}
                           </label>
                         ))}
+                        </div>
                       </div>
-                    </div>
+                    </>
                   )}
                   {/* NOTES (AI only) */}
                   {generateMode === "AI" && (
-                    <div>
+                    <div className={isMobileAiExpanded ? "block" : "hidden sm:block"}>
                       <label className="block text-sm font-bold text-slate-300 mb-2">
                         Notes for AI
                       </label>
@@ -2034,11 +2357,11 @@ export const PreblastGeneratorView: React.FC = () => {
         {/* RIGHT PANEL */}
         <div
           ref={outputRef}
-          className="bg-slate-800/50 rounded-lg shadow-2xl p-6 border border-slate-700 flex flex-col"
+          className="bg-slate-800/50 rounded-lg shadow-2xl p-4 sm:p-6 border border-slate-700 flex flex-col"
         >
           <div className="mb-4">
             <div className="flex items-center gap-2">
-              <h3 className="text-2xl sm:text-3xl font-display text-white">Generated Pre-Blast</h3>
+              <h3 className="text-xl sm:text-3xl font-display text-white">Generated Pre-Blast</h3>
               {outputMode && (
                 <span
                   className={`text-[10px] sm:text-xs font-semibold px-2 py-0.5 rounded-full ${
@@ -2058,21 +2381,52 @@ export const PreblastGeneratorView: React.FC = () => {
             )}
           </div>
 
-          <div className="bg-slate-900 p-4 rounded-md flex-grow min-h-[300px] text-slate-200 text-sm leading-relaxed overflow-y-auto">
-            {generatedPreblastText ? renderPreblastPreview(generatedPreblastText) : null}
+          <div className="bg-slate-900 p-4 rounded-md flex-grow min-h-[240px] sm:min-h-[300px] text-slate-200 text-sm leading-relaxed overflow-y-auto">
+            {generatedPreblastText ? (
+              renderPreblastPreview(generatedPreblastText)
+            ) : (
+              <div className="text-sm text-slate-500">
+                Generate a pre-blast to preview the final post here.
+              </div>
+            )}
           </div>
 
           {generatedPreblastText && (
             <button
               onClick={handleCopyAndPost}
-              className="mt-4 w-full bg-green-600 text-white font-bold py-2 rounded-md hover:bg-green-700 flex items-center justify-center gap-2"
+              className="mt-4 hidden sm:flex w-full bg-green-600 text-white font-bold py-2 rounded-md hover:bg-green-700 items-center justify-center gap-2"
             >
               <ExternalLinkIcon />
               {copySuccess ? "Copied! Opening BAND..." : "Copy & Start Post in BAND"}
             </button>
           )}
+
+          <div ref={outputBottomRef} className="h-px sm:hidden" />
         </div>
       </div>
+
+      {generatedPreblastText && (
+        <div className="sm:hidden fixed left-1/2 bottom-28 z-10 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 rounded-2xl border border-slate-700 bg-slate-950/95 px-3 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                generateMode === "AI" ? handleGenerateAI() : handleFormatNoAI()
+              }
+              className="min-h-[48px] rounded-md border border-slate-600 bg-slate-800 px-3 text-sm font-semibold text-slate-100"
+            >
+              Regenerate
+            </button>
+            <button
+              type="button"
+              onClick={handleCopyAndPost}
+              className="min-h-[48px] rounded-md bg-green-600 px-3 text-sm font-semibold text-white"
+            >
+              {copySuccess ? "Copied! Opening BAND..." : "Copy & Start Post in BAND"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
