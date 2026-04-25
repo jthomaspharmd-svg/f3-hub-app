@@ -36,6 +36,7 @@ const mapAoNameToId = (value) => {
   if (low === "gator bay") return "gatorbay";
   if (low === "jurassic park") return "jurassicpark";
   if (low === "phoenix rising") return "phoenixrising";
+  if (low === "smoked grove" || low === "smoaked grove") return "smoakedgrove";
   if (low === "the hill") return "thehill";
   if (low === "the shadows") return "theshadows";
   return null;
