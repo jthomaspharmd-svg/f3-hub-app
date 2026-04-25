@@ -1192,6 +1192,7 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
     "phoenixrising",
     "gatorbay",
     "theshadows",
+    "smoakedgrove",
   ].includes(activeAo.id);
 
   // ✅ AO-based default most recent workout

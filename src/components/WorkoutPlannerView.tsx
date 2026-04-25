@@ -143,6 +143,8 @@ const formatAoShortLabel = (raw: string): string => {
   if (low.includes("the hill") || low === "thehill") return "The Hill";
   if (low.includes("the shadows") || low === "theshadows") return "Shadows";
   if (low.includes("gator bay") || low === "gatorbay") return "Gator Bay";
+  if (low.includes("smoaked grove") || low === "smoakedgrove")
+    return "Smoaked Grove";
   if (low.includes("phoenix rising") || low === "phoenixrising")
     return "Phoenix Rising";
 
@@ -169,6 +171,8 @@ const canonicalAoKey = (args: { id?: string; name?: string }): string => {
   if (n.includes("the hill") || n === "thehill") return "thehill";
   if (n.includes("the shadows") || n === "theshadows") return "theshadows";
   if (n.includes("gator bay") || n === "gatorbay") return "gatorbay";
+  if (n.includes("smoaked grove") || n === "smoakedgrove")
+    return "smoakedgrove";
   if (n.includes("phoenix rising") || n === "phoenixrising")
     return "phoenixrising";
 

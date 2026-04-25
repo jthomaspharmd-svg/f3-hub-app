@@ -1179,6 +1179,7 @@ export const PreblastGeneratorView: React.FC = () => {
     "phoenixrising",
     "gatorbay",
     "theshadows",
+    "smoakedgrove",
   ].includes(activeAo.id);
 
   const preblastAoLabel = useMemo(() => {

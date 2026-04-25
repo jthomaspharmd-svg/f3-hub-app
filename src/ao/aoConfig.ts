@@ -7,7 +7,8 @@ export type AoId =
   | "thehill"
   | "theshadows"
   | "gatorbay"
-  | "phoenixrising";
+  | "phoenixrising"
+  | "smoakedgrove";
 
 export type ScheduleBlock = {
   daysOfWeek: number[]; // JS: 0=Sun ... 6=Sat
@@ -279,6 +280,34 @@ export const AO_CONFIG: Record<AoId, AoConfig> = {
     hashtags: ["#phoenixrising"],
     optionalHashtags: ["#frisbee"],
     modules: { planner: true, qSheet: false, preblast: true, backblast: true },
+  },
+
+  smoakedgrove: {
+    id: "smoakedgrove",
+    shortName: "Smoaked Grove",
+    displayName: "Smoaked Grove",
+    whereName: "Smoaked Grove",
+    address: "1515 Golden Vw Dr, Missouri City, TX 77459",
+
+    scheduleBlocks: [
+      {
+        daysOfWeek: [2, 4], // Tue/Thu
+        startTime24: "05:00",
+        endTime24: "05:45",
+      },
+    ],
+
+    bandPostUrl: "https://www.band.us/band/94185591/post",
+    reportUrl:
+      "https://datastudio.google.com/embed/reporting/f13d2066-eb12-4d9e-89fe-7b6113a5c884/page/p_3clta6122d",
+    qSheet: {
+      tinyUrl: undefined,
+      googleSheetUrl:
+        "https://docs.google.com/spreadsheets/d/1uuGHi17kkbw-Lsni1Ik5t4yfrABc87Qx44G6PiJufAY/edit?gid=0#gid=0",
+    },
+    hashtags: ["#smoakedgrove"],
+    optionalHashtags: [],
+    modules: { planner: true, qSheet: true, preblast: true, backblast: true },
   },
 };
 

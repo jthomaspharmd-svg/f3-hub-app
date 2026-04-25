@@ -44,6 +44,8 @@ const canonicalAoKey = (nameOrId: string): string => {
   if (n === "thehill" || n.includes("the hill")) return "The Hill";
   if (n === "theshadows" || n.includes("the shadows")) return "The Shadows";
   if (n === "gatorbay" || n.includes("gator bay")) return "Gator Bay";
+  if (n === "smoakedgrove" || n.includes("smoaked grove"))
+    return "Smoaked Grove";
   if (n === "phoenixrising" || n.includes("phoenix rising"))
     return "Phoenix Rising";
   if (
@@ -62,6 +64,9 @@ const canonicalAoKey = (nameOrId: string): string => {
 ---------------------------------------------------- */
 const googleMapsCoordLink = (lat: number, lng: number) =>
   `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+
+const googleMapsAddressLink = (address: string) =>
+  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 
 /* ----------------------------------------------------
    PAX SELECT CELL (now takes paxList)
@@ -210,6 +215,9 @@ const GoogleSheetQSheet: React.FC<{
   addressLinkUrl?: string;
 }> = ({ title, whereName, address, sheetUrl, addressLinkUrl }) => {
   const addressLines = address.split("\n");
+  const showWhereName =
+    Boolean(whereName?.trim()) &&
+    whereName.trim().toLowerCase() !== title.trim().toLowerCase();
 
   const buildPreviewUrl = (url: string) => {
     const match = url.match(/https:\/\/docs\.google\.com\/spreadsheets\/d\/([^/]+)/);
@@ -230,7 +238,9 @@ const GoogleSheetQSheet: React.FC<{
         <h3 className="text-xl text-slate-100 font-display tracking-wide leading-tight">
           {title}
         </h3>
-        <p className="text-slate-300 text-sm leading-tight">{whereName}</p>
+        {showWhereName && (
+          <p className="text-slate-300 text-sm leading-tight">{whereName}</p>
+        )}
 
         {addressLinkUrl ? (
           <a
@@ -337,6 +347,9 @@ export const QSheetView: React.FC = () => {
     JURASSIC_COORDS.lat,
     JURASSIC_COORDS.lng
   );
+  const genericAddressLink = activeAo?.address
+    ? googleMapsAddressLink(activeAo.address)
+    : undefined;
 
   // Dynamic pax list based on AO; fallback to global list
   const paxDirectoryVersion = usePaxDirectoryVersion();
@@ -491,6 +504,22 @@ export const QSheetView: React.FC = () => {
         }
         addressLinkUrl={jurassicLink}
         sheetUrl="https://docs.google.com/spreadsheets/d/1C_AamtdoHPaodpH-pDUx92n4DYgJUKLQhII0MoZDxIM/edit?gid=1205329126#gid=1205329126"
+      />
+    );
+  }
+
+  if (activeAo?.modules?.qSheet && activeAo?.qSheet?.googleSheetUrl) {
+    return (
+      <GoogleSheetQSheet
+        title={activeAo.displayName}
+        whereName={activeAo.whereName}
+        address={
+          activeAo.meetingPoint
+            ? `${activeAo.address}\n${activeAo.meetingPoint}`
+            : activeAo.address
+        }
+        addressLinkUrl={genericAddressLink}
+        sheetUrl={activeAo.qSheet.googleSheetUrl}
       />
     );
   }

@@ -131,12 +131,14 @@ export type AoIdLite =
   | "thehill"
   | "theshadows"
   | "gatorbay"
-  | "phoenixrising";
+  | "phoenixrising"
+  | "smoakedgrove";
 
 export const PAX_LIST_THEHILL = [] as const;
 export const PAX_LIST_THESHADOWS = [] as const;
 export const PAX_LIST_GATORBAY = [] as const;
 export const PAX_LIST_PHOENIXRISING = [] as const;
+export const PAX_LIST_SMOAKEDGROVE = [] as const;
 
 type PaxDirectory = {
   paxByAo: Record<string, string[]>;
@@ -173,6 +175,8 @@ export const getPaxListByAo = (aoId: AoIdLite): readonly string[] => {
       return PAX_LIST_GATORBAY;
     case "phoenixrising":
       return PAX_LIST_PHOENIXRISING;
+    case "smoakedgrove":
+      return PAX_LIST_SMOAKEDGROVE;
     case "compass":
     default:
       return PAX_LIST;
