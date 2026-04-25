@@ -6,8 +6,8 @@
    ✔ Round description support (planner → backblast)
    ✔ Warmup description support (planner → backblast)
    ✔ Prevent Gemini from rewriting Warmup & Thang
-   ✔ First-person backblast intro (Q = "I")
-   ✔ First-person preblast intro (Q = "I")
+   ✔ YHC-based backblast intro
+   ✔ YHC-based preblast intro
    ✔ Retry logic preserved + improved error propagation
    ✔ FIX: do NOT swallow errors (throw so UI can retry/classify)
    ✔ FIX: validate aoId and API key with clear errors
@@ -208,7 +208,49 @@ const stripWeekdayFromDate = (value: string) =>
     .replace(/^[A-Za-z]+,\s*/, "");
 
 // -----------------------------------------------------
-// PREBLAST GENERATOR (WITH RETRY) — FIRST PERSON ✅
+const normalizeAiNarrationPerspective = (text: string) => {
+  let normalized = String(text || "");
+
+  const replacements: Array<[RegExp, string]> = [
+    [/\bI am\b/g, "YHC is"],
+    [/\bI'm\b/g, "YHC is"],
+    [/\bI’ve\b/g, "YHC has"],
+    [/\bI've\b/g, "YHC has"],
+    [/\bI’ll\b/g, "YHC will"],
+    [/\bI'll\b/g, "YHC will"],
+    [/\bI’d\b/g, "YHC would"],
+    [/\bI'd\b/g, "YHC would"],
+    [/\bmyself\b/g, "YHC"],
+    [/\bmine\b/g, "YHC's"],
+    [/\bmy\b/g, "YHC's"],
+    [/\bme\b/g, "YHC"],
+    [/\bI\b/g, "YHC"],
+  ];
+
+  for (const [pattern, replacement] of replacements) {
+    normalized = normalized.replace(pattern, replacement);
+  }
+
+  return normalized;
+};
+
+const normalizeBackblastNarrationPerspective = (
+  text: string,
+  backblastContent: string
+) => {
+  const fullText = String(text || "");
+  const contentBlock = String(backblastContent || "").trim();
+  if (!contentBlock) return normalizeAiNarrationPerspective(fullText);
+
+  const contentIndex = fullText.indexOf(contentBlock);
+  if (contentIndex === -1) return normalizeAiNarrationPerspective(fullText);
+
+  const intro = fullText.slice(0, contentIndex);
+  const body = fullText.slice(contentIndex);
+  return `${normalizeAiNarrationPerspective(intro)}${body}`;
+};
+
+// PREBLAST GENERATOR (WITH RETRY) — YHC POV
 // IMPORTANT CHANGE: throws on failure so caller can handle.
 // -----------------------------------------------------
 export const generatePreblast = async (
@@ -255,12 +297,12 @@ OUTPUT RULES:
 - Do not simply say the workout will be high-energy, challenging, or effective. Show tone through the wording instead.
 
 VOICE & POV:
-- Write in FIRST PERSON, as if I am the Q named "${
+- Write in third person from the Q's viewpoint using "YHC" in place of "I" for the Q named "${
     qName || "the Q"
   }".
-- Use "I" for what the Q is bringing or leading.
+- Use "YHC" for what the Q is bringing or leading.
 - Use "we" or "the PAX" for the group.
-- Never refer to the Q in third person.
+- Never use first-person pronouns for the Q.
 - Do not say "your workout" or "the Q's workout."
 
 WORKOUT TYPE:
@@ -302,7 +344,7 @@ ${toBringList ? `- Bring Items: ${toBringList}` : ""}
 
   const text = (response?.text ?? "").trim();
   if (!text) throw new Error("Gemini returned empty text for preblast.");
-  return text;
+  return normalizeAiNarrationPerspective(text);
 };
 
 // -----------------------------------------------------
@@ -722,12 +764,13 @@ END DO NOT PRINT.
 You are an F3 Backblast generator.
 
 VOICE & POV (CRITICAL):
-- Write everything in FIRST PERSON, as if **I am the Q** named "${
+- Write everything from the Q's viewpoint using **YHC** instead of first-person pronouns for "${
     qName || "the Q"
   }".
-- Use "I" when describing what I did (e.g., "I decided...", "I led...").
+- Use "YHC" when describing what the Q did (e.g., "YHC decided...", "YHC led...").
 - Use "we" or "the PAX" when describing the group.
-- NEVER refer to the Q in third person (no "the Q did X", no "he", "she", or "${
+- NEVER use first-person pronouns for the Q (no "I", "me", "my", or "mine").
+- Do not use "he", "she", or "${
     qName || ""
   }" in narration).
 - Do not say "your workout" or "the Q's workout".
@@ -794,7 +837,7 @@ ${backblastContent}
 
   const text = (response?.text ?? "").trim();
   if (!text) throw new Error("Gemini returned empty text for backblast.");
-  return text;
+  return normalizeBackblastNarrationPerspective(text, backblastContent);
 };
 
 // -----------------------------------------------------
