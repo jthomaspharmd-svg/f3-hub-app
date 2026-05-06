@@ -306,6 +306,103 @@ const GoogleSheetQSheet: React.FC<{
   );
 };
 
+const ExternalQSheetPreview: React.FC<{
+  title: string;
+  heading: string;
+  whereName: string;
+  address: string;
+  externalUrl: string;
+  ctaLabel: string;
+  addressLinkUrl?: string;
+}> = ({
+  title,
+  heading,
+  whereName,
+  address,
+  externalUrl,
+  ctaLabel,
+  addressLinkUrl,
+}) => {
+  const addressLines = address.split("\n");
+  const showWhereName =
+    Boolean(whereName?.trim()) &&
+    whereName.trim().toLowerCase() !== title.trim().toLowerCase();
+
+  return (
+    <div className="animate-fade-in">
+      <div className="bg-slate-800/50 border border-slate-700 px-4 py-2.5 rounded-lg text-center mb-4">
+        <h3 className="text-xl text-slate-100 font-display tracking-wide leading-tight">
+          {title}
+        </h3>
+        {showWhereName && (
+          <p className="text-slate-300 text-sm leading-tight">{whereName}</p>
+        )}
+
+        {addressLinkUrl ? (
+          <a
+            href={addressLinkUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-slate-300 text-sm whitespace-pre-line underline decoration-dotted hover:decoration-solid hover:text-red-300 inline-block leading-tight"
+          >
+            <span className="block">Location: {addressLines[0]}</span>
+            {addressLines.slice(1).map((line, index) => (
+              <span key={index} className="block whitespace-nowrap">
+                {line}
+              </span>
+            ))}
+          </a>
+        ) : (
+          <p className="text-slate-300 text-sm leading-tight">
+            <span className="block">{addressLines[0]}</span>
+            {addressLines.slice(1).map((line, index) => (
+              <span key={index} className="block whitespace-nowrap">
+                {line}
+              </span>
+            ))}
+          </p>
+        )}
+      </div>
+
+      <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
+        <div className="flex items-center gap-2 mb-3">
+          <CalendarIcon className="text-red-500 h-6 w-6" />
+          <h2 className="text-2xl sm:text-3xl font-display tracking-wide">
+            {heading}
+          </h2>
+        </div>
+
+        <p className="text-slate-300 text-sm mb-4">
+          Preview the signup page below, then open it in a new tab to complete
+          the form. If the site blocks embedding, the button will still open the
+          page directly.
+        </p>
+
+        <a
+          href={externalUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center gap-2 w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-5 rounded-md mb-4"
+        >
+          <ExternalLinkIcon />
+          {ctaLabel}
+        </a>
+
+        <div className="w-full border border-slate-700 rounded-md overflow-hidden mb-4 bg-white">
+          <iframe
+            title={`${title} Preview`}
+            src={externalUrl}
+            className="w-full h-[720px]"
+            loading="lazy"
+          />
+        </div>
+
+        <p className="text-slate-500 text-xs mt-3 break-all">{externalUrl}</p>
+      </div>
+    </div>
+  );
+};
+
 /* ----------------------------------------------------
    MAIN COMPONENT
 ---------------------------------------------------- */
@@ -504,6 +601,28 @@ export const QSheetView: React.FC = () => {
         }
         addressLinkUrl={jurassicLink}
         sheetUrl="https://docs.google.com/spreadsheets/d/1C_AamtdoHPaodpH-pDUx92n4DYgJUKLQhII0MoZDxIM/edit?gid=1205329126#gid=1205329126"
+      />
+    );
+  }
+
+  if (activeAo?.qSheet?.externalUrl) {
+    return (
+      <ExternalQSheetPreview
+        title={activeAo.displayName}
+        heading={activeAo.id === "theshadows" ? "Q Sign-Up" : "Q-Sheet"}
+        whereName={activeAo.whereName}
+        address={
+          activeAo.meetingPoint
+            ? `${activeAo.address}\n${activeAo.meetingPoint}`
+            : activeAo.address
+        }
+        addressLinkUrl={genericAddressLink}
+        externalUrl={activeAo.qSheet.externalUrl}
+        ctaLabel={
+          activeAo.id === "theshadows"
+            ? "Open Q Sign-Up"
+            : "Open Q-Sheet"
+        }
       />
     );
   }

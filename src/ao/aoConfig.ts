@@ -36,6 +36,7 @@ export type AoConfig = {
   qSheet: {
     tinyUrl?: string;
     googleSheetUrl?: string;
+    externalUrl?: string;
   };
 
   // AO-specific hashtags (generators will append #preblast/#backblast)
@@ -205,12 +206,13 @@ export const AO_CONFIG: Record<AoId, AoConfig> = {
     reportUrl:
       "https://lookerstudio.google.com/embed/reporting/f13d2066-eb12-4d9e-89fe-7b6113a5c884/page/p_ieuw34ea2d",
     qSheet: {
-      tinyUrl: undefined,
+      tinyUrl: "https://fs21.formsite.com/NmX6Dt/The-Shadows/index",
       googleSheetUrl: undefined,
+      externalUrl: "https://fs21.formsite.com/NmX6Dt/The-Shadows/index",
     },
     hashtags: ["#theshadows"],
     optionalHashtags: ["#heavy"],
-    modules: { planner: true, qSheet: false, preblast: true, backblast: true },
+    modules: { planner: true, qSheet: true, preblast: true, backblast: true },
   },
 
   gatorbay: {

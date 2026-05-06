@@ -141,6 +141,8 @@ const App: React.FC = () => {
     (activeAo.modules.planner ? 1 : 0) +
     2 +
     (hasReport ? 1 : 0);
+  const qSheetLabel = activeAo.id === "theshadows" ? "Q Sign-Up" : "Q-Sheet";
+  const mobileQSheetLabel = activeAo.id === "theshadows" ? "Q Sign-Up" : "Schedule";
 
   //
   // Render active view
@@ -264,7 +266,11 @@ const App: React.FC = () => {
             <div className="flex items-center gap-3 flex-shrink-0">
               <nav className="hidden sm:flex items-center gap-2">
                 {activeAo.modules.qSheet && (
-                  <NavItem view="Q_SHEET" label="Q-Sheet" icon={<CalendarIcon />} />
+                  <NavItem
+                    view="Q_SHEET"
+                    label={qSheetLabel}
+                    icon={<CalendarIcon />}
+                  />
                 )}
                 <NavItem
                   view="PRE_BLAST"
@@ -320,7 +326,7 @@ const App: React.FC = () => {
             {activeAo.modules.qSheet && (
               <MobileNavItem
                 view="Q_SHEET"
-                label="Schedule"
+                label={mobileQSheetLabel}
                 icon={<CalendarIcon />}
               />
             )}

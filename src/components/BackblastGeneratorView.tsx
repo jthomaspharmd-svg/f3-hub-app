@@ -2724,14 +2724,6 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
       formatExercise
     );
 
-    const styleSeed = buildStyleSeed();
-    const useEmojis = shouldUseEmojis(
-      styleSeed,
-      forceNoEmojis,
-      aiOptions.minimalEmojis,
-      activeAo.id
-    );
-
     const hashtags = buildHashtags(activeAo.hashtags || [], "backblast", {
       aoId: activeAo.id,
       workoutDate: longDate,
@@ -3390,6 +3382,13 @@ export const BackblastGeneratorView: React.FC<BackblastGeneratorViewProps> = ({
       .filter((p: any) => p.name.trim() !== "");
 
     const qDisplayName = stripAt(qName);
+    const styleSeed = buildStyleSeed();
+    const useEmojis = shouldUseEmojis(
+      styleSeed,
+      forceNoEmojis,
+      aiOptions.minimalEmojis,
+      activeAo.id
+    );
 
     // JP counts (we pass these to Gemini so it can write a grounded appreciation)
     const jpRunCount = jpRunPax.filter((p) => stripAt(p.name)).length;

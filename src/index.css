@@ -1,6 +1,4 @@
-/* -----------------------------------------
-   Minimal global CSS (NO build-time Tailwind)
------------------------------------------- */
+@import "tailwindcss";
 
 /* Keep fonts sane and consistent */
 :root {
