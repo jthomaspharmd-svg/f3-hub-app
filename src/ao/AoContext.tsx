@@ -14,13 +14,20 @@ const STORAGE_KEY = "f3_active_ao";
 
 export const AoProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeAoId, setActiveAoIdState] = useState<AoId>(() => {
+    const urlAo = new URLSearchParams(window.location.search).get("ao") as AoId | null;
+    if (urlAo && AO_CONFIG[urlAo]) return urlAo;
+
     const saved = localStorage.getItem(STORAGE_KEY) as AoId | null;
     return saved && AO_CONFIG[saved] ? saved : "compass";
   });
 
-  // Keep localStorage in sync (also handles first load)
+  // Keep localStorage and the shareable `?ao=` URL in sync.
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, activeAoId);
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("ao", activeAoId);
+    window.history.replaceState({}, "", url);
   }, [activeAoId]);
 
   const setActiveAoId = (id: AoId) => {
