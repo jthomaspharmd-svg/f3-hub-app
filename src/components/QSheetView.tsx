@@ -12,6 +12,11 @@ import {
 import { PAX_LIST, getPaxListByAo } from "../constants";
 import { usePaxDirectoryVersion } from "../pax/PaxDirectoryContext";
 import { useAo } from "../ao/AoContext";
+import {
+  buildCompassEffectiveWorkoutSessions,
+  dateStringToKey,
+  filterWorkoutSessionsByMonthWindow,
+} from "../shared/compassQSchedule";
 
 /* ----------------------------------------------------
    AO helpers: normalize context value + canonical key
@@ -181,28 +186,6 @@ const EditableCellComponent: React.FC<{
 };
 const EditableCell = React.memo(EditableCellComponent);
 EditableCell.displayName = "EditableCell";
-
-/* ----------------------------------------------------
-   DATE PARSER
----------------------------------------------------- */
-const normalizeDate = (dateStr: string) => {
-  const cleaned = dateStr.split(" ")[0];
-  const [m, d, y] = cleaned.split("/");
-  if (!m || !d || !y) return new Date("2100-01-01");
-  const year = y.length === 2 ? Number("20" + y) : Number(y);
-  return new Date(year, Number(m) - 1, Number(d));
-};
-
-/* ----------------------------------------------------
-   DATE KEY (YYYYMMDD) for efficient Firestore queries
----------------------------------------------------- */
-const dateStringToKey = (dateStr: string) => {
-  const cleaned = dateStr.split(" ")[0];
-  const [m, d, y] = cleaned.split("/");
-  if (!m || !d || !y) return "99999999";
-  const year = y.length === 2 ? `20${y}` : y;
-  return `${year}${m.padStart(2, "0")}${d.padStart(2, "0")}`;
-};
 
 /* ----------------------------------------------------
    GOOGLE-SHEET (NON-FIRESTORE) Q SHEET CARD
@@ -413,7 +396,9 @@ export const QSheetView: React.FC = () => {
   const DEFAULT_FUTURE_MONTHS = 1;
   const [pastMonths, setPastMonths] = useState(0);
   const [futureMonths, setFutureMonths] = useState(DEFAULT_FUTURE_MONTHS);
-  const [workoutSessions, setWorkoutSessions] = useState<WorkoutSession[]>([]);
+  const [persistedWorkoutSessions, setPersistedWorkoutSessions] = useState<
+    WorkoutSession[]
+  >([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadMoreAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -472,11 +457,14 @@ export const QSheetView: React.FC = () => {
     const unsub = onSnapshot(
       ref,
       (snapshot) => {
-        const sessions = snapshot.docs.map((d) => d.data() as WorkoutSession);
+        const sessions = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as WorkoutSession),
+        }));
         sessions.sort((a, b) =>
           dateStringToKey(a.date).localeCompare(dateStringToKey(b.date))
         );
-        setWorkoutSessions(sessions);
+        setPersistedWorkoutSessions(sessions);
         setIsLoading(false);
       },
       (err) => {
@@ -501,22 +489,81 @@ export const QSheetView: React.FC = () => {
     []
   );
 
-  const displayed = useMemo(() => {
-    const futureCut = new Date(today);
-    futureCut.setMonth(today.getMonth() + futureMonths);
+  const effectiveWorkoutSessions = useMemo(() => {
+    if (isCompass) {
+      return buildCompassEffectiveWorkoutSessions(persistedWorkoutSessions).sessions;
+    }
 
-    const pastCut = new Date(today);
-    pastCut.setMonth(today.getMonth() - pastMonths);
+    return [...persistedWorkoutSessions].sort((a, b) =>
+      dateStringToKey(a.date).localeCompare(dateStringToKey(b.date))
+    );
+  }, [isCompass, persistedWorkoutSessions]);
 
-    return workoutSessions.filter((s) => {
-      const d = normalizeDate(s.date);
-      if (isNaN(d.getTime())) return false;
-      if (pastMonths === 0 && d < today) return false;
-      if (d < pastCut) return false;
-      if (d > futureCut) return false;
-      return true;
-    });
-  }, [workoutSessions, pastMonths, futureMonths, today]);
+  const displayed = useMemo(
+    () =>
+      filterWorkoutSessionsByMonthWindow(
+        effectiveWorkoutSessions,
+        today,
+        pastMonths,
+        futureMonths
+      ),
+    [effectiveWorkoutSessions, futureMonths, pastMonths, today]
+  );
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || !isCompass) return;
+
+    const debugWindowStart = "2026-05-08";
+    const debugWindowEnd = "2026-07-07";
+    const inDebugWindow = (session: WorkoutSession) => {
+      const key = dateStringToKey(session.date);
+      return key >= "20260508" && key <= "20260707";
+    };
+
+    (
+      window as Window & {
+        __qSheetDebug?: Record<string, unknown>;
+      }
+    ).__qSheetDebug = {
+      browserFirebaseDebug: (
+        window as Window & {
+          __firebaseDebug?: Record<string, unknown>;
+        }
+      ).__firebaseDebug || null,
+      persistedWindow: persistedWorkoutSessions
+        .filter(inDebugWindow)
+        .slice(0, 20)
+        .map((session) => ({
+          id: session.id,
+          date: session.date,
+          dateKey: session.dateKey,
+          time: session.time,
+          q: session.q,
+          notes: session.notes,
+        })),
+      effectiveWindow: effectiveWorkoutSessions
+        .filter(inDebugWindow)
+        .slice(0, 20)
+        .map((session) => ({
+          id: session.id,
+          date: session.date,
+          dateKey: session.dateKey,
+          time: session.time,
+          q: session.q,
+          notes: session.notes,
+        })),
+      displayedWindow: displayed.filter(inDebugWindow).slice(0, 20).map((session) => ({
+        id: session.id,
+        date: session.date,
+        dateKey: session.dateKey,
+        time: session.time,
+        q: session.q,
+        notes: session.notes,
+      })),
+      debugWindowStart,
+      debugWindowEnd,
+    };
+  }, [displayed, effectiveWorkoutSessions, isCompass, persistedWorkoutSessions]);
 
   // Keep view anchored near the "Load more" buttons after expanding range
   useEffect(() => {
