@@ -78,6 +78,8 @@ const isLocalDevRequest = (event: NetlifyEvent) => {
   );
 };
 
+const isProductionRequest = (event: NetlifyEvent) => !isLocalDevRequest(event);
+
 const firebaseConfigPresent = () => ({
   apiKey: Boolean(FIREBASE_CONFIG.apiKey),
   authDomain: Boolean(FIREBASE_CONFIG.authDomain),
@@ -128,6 +130,10 @@ const withDiagnostics = (
 const readServiceAccount = async (): Promise<ServiceAccount | null> => {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON) as ServiceAccount;
+  }
+
+  if (process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON) {
+    return JSON.parse(process.env.GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON) as ServiceAccount;
   }
 
   const configuredPath =
@@ -404,6 +410,25 @@ export const handler = async (event: NetlifyEvent) => {
     serviceAccountProjectId: serviceAccount?.project_id || null,
     reader: serviceAccount ? "service-account-rest" : "firebase-web-sdk",
   });
+
+  if (!serviceAccount && isProductionRequest(event)) {
+    return {
+      statusCode: 500,
+      headers: JSON_HEADERS,
+      body: JSON.stringify(
+        withDiagnostics(
+          event,
+          {
+            ok: false,
+            error: "Missing Firebase service account configuration",
+            message:
+              "Production requires FIREBASE_SERVICE_ACCOUNT_JSON or GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON for Firestore server access.",
+          },
+          baseDiagnostics
+        )
+      ),
+    };
+  }
 
   try {
     const result = serviceAccount

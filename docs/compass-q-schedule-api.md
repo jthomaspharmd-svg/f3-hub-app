@@ -35,7 +35,7 @@ http://localhost:8888/.netlify/functions/compass-q-schedule?lookaheadDays=30
 Example with a fixed test start date:
 
 ```text
-http://localhost:8888/.netlify/functions/compass-q-schedule?fromDate=2026-05-08&lookaheadDays=60
+http://localhost:8888/.netlify/functions/compass-q-schedule?fromDate=2026-05-08&lookaheadDays=7
 ```
 
 ## Production URL
@@ -53,13 +53,13 @@ https://f3workouthub.netlify.app/.netlify/functions/compass-q-schedule?lookahead
 Production can also use an explicit start date if needed:
 
 ```text
-https://f3workouthub.netlify.app/.netlify/functions/compass-q-schedule?fromDate=2026-05-08&lookaheadDays=60
+https://f3workouthub.netlify.app/.netlify/functions/compass-q-schedule?fromDate=2026-05-08&lookaheadDays=7
 ```
 
 ## Query params
 
 - `lookaheadDays`
-  Optional. Default is `14`.
+  Optional. Default is `7`.
 - `fromDate`
   Optional. Format: `YYYY-MM-DD`. If supplied, the API uses that date as the start of the lookahead window instead of the current date.
 - `key`
@@ -80,6 +80,28 @@ If `Q_SCHEDULE_API_KEY` is not set locally, the function allows local developmen
 
 In Netlify production, set `Q_SCHEDULE_API_KEY` in the site's environment variables if you want protection enabled there.
 
+## Production Firestore requirement
+
+Local Netlify Dev can read `serviceAccountKey.json` from the repo root if present.
+Netlify production cannot use that local file.
+
+For production, the function will use credentials in this order:
+
+1. `FIREBASE_SERVICE_ACCOUNT_JSON`
+2. `GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON`
+
+If neither exists, production will fail with an explicit credential error.
+
+If you want a dedicated Firebase credential, set this environment variable in Netlify:
+
+```bash
+FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account","project_id":"...","private_key_id":"...","private_key":"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n","client_email":"...","client_id":"..."}
+```
+
+Do not commit the service account file or JSON into the repo.
+
+If `FIREBASE_SERVICE_ACCOUNT_JSON` is not set, the function will fall back to `GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON` for Firestore access.
+
 ## Response JSON
 
 Successful response:
@@ -89,7 +111,7 @@ Successful response:
   "ok": true,
   "aoId": "compass",
   "aoName": "Compass at Lost Creek",
-  "lookaheadDays": 14,
+  "lookaheadDays": 7,
   "schedule": [
     {
       "aoId": "compass",
@@ -114,7 +136,7 @@ If no upcoming Compass Qs are assigned within the requested window:
   "ok": true,
   "aoId": "compass",
   "aoName": "Compass at Lost Creek",
-  "lookaheadDays": 14,
+  "lookaheadDays": 7,
   "schedule": []
 }
 ```
@@ -127,7 +149,7 @@ Example shape:
 
 ```javascript
 const url =
-  "https://f3workouthub.netlify.app/.netlify/functions/compass-q-schedule?lookaheadDays=14";
+  "https://f3workouthub.netlify.app/.netlify/functions/compass-q-schedule?lookaheadDays=7";
 
 const response = UrlFetchApp.fetch(url);
 const payload = JSON.parse(response.getContentText());

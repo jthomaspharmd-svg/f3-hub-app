@@ -25,7 +25,7 @@ export type CompassQScheduleRow = {
   bandUrl: string;
 };
 
-export const COMPASS_Q_SCHEDULE_DEFAULT_LOOKAHEAD_DAYS = 14;
+export const COMPASS_Q_SCHEDULE_DEFAULT_LOOKAHEAD_DAYS = 7;
 export const COMPASS_Q_SCHEDULE_TIME_ZONE = "America/Chicago";
 
 const COMPASS_AO = AO_CONFIG.compass;
