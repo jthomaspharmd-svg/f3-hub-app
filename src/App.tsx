@@ -48,6 +48,32 @@ type View = "Q_SHEET" | "PRE_BLAST" | "WORKOUT_PLANNER" | "BACK_BLAST";
 const defaultLogged: WorkoutSession[] = [];
 
 const ACTIVE_VIEW_KEY = "f3ActiveView"; // session-scoped
+const VIEW_QUERY_TO_APP_VIEW: Record<string, View> = {
+  qsheet: "Q_SHEET",
+  "q-sheet": "Q_SHEET",
+  preblast: "PRE_BLAST",
+  "pre-blast": "PRE_BLAST",
+  planner: "WORKOUT_PLANNER",
+  workoutplanner: "WORKOUT_PLANNER",
+  "workout-planner": "WORKOUT_PLANNER",
+  backblast: "BACK_BLAST",
+  "back-blast": "BACK_BLAST",
+};
+const APP_VIEW_TO_QUERY: Record<View, string> = {
+  Q_SHEET: "qsheet",
+  PRE_BLAST: "preblast",
+  WORKOUT_PLANNER: "planner",
+  BACK_BLAST: "backblast",
+};
+
+const parseViewQueryParam = (): View | null => {
+  const rawView = new URLSearchParams(window.location.search)
+    .get("view")
+    ?.trim()
+    .toLowerCase();
+  if (!rawView) return null;
+  return VIEW_QUERY_TO_APP_VIEW[rawView] || null;
+};
 
 const App: React.FC = () => {
   // ✅ AO context
@@ -55,6 +81,8 @@ const App: React.FC = () => {
 
   // ✅ Restore last view after mobile refresh/app-switch
   const [activeView, setActiveView] = useState<View>(() => {
+    const urlView = parseViewQueryParam();
+    if (urlView) return urlView;
     const saved = sessionStorage.getItem(ACTIVE_VIEW_KEY) as View | null;
     return saved ?? "Q_SHEET";
   });
@@ -62,6 +90,9 @@ const App: React.FC = () => {
   // ✅ Persist view whenever it changes
   useEffect(() => {
     sessionStorage.setItem(ACTIVE_VIEW_KEY, activeView);
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", APP_VIEW_TO_QUERY[activeView]);
+    window.history.replaceState({}, "", url);
   }, [activeView]);
 
   // ✅ If AO disables Planner, ensure we aren’t stuck on it

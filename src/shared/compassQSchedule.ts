@@ -30,7 +30,7 @@ export const COMPASS_Q_SCHEDULE_TIME_ZONE = "America/Chicago";
 
 const COMPASS_AO = AO_CONFIG.compass;
 const COMPASS_AO_NAME = COMPASS_AO.displayName;
-const COMPASS_PREBLAST_URL = "https://f3workouthub.netlify.app/preblast?ao=compass";
+const COMPASS_PREBLAST_URL = "https://f3workouthub.netlify.app/?ao=compass&view=preblast";
 const COMPASS_BAND_URL = COMPASS_AO.bandPostUrl || COMPASS_AO.bandUrl || "";
 const COMPASS_BASE_WORKOUT_SESSIONS = compassBaseWorkoutSessionsJson as WorkoutSession[];
 
