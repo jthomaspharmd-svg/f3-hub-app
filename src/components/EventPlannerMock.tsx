@@ -11,7 +11,7 @@ import {
   setDoc,
   writeBatch,
 } from "firebase/firestore";
-import { getPaxListByAo, THANG_EXERCISES, WARMUP_EXERCISES } from "../constants";
+import { getPaxListByAo } from "../constants";
 import { setPaxDirectory } from "../constants";
 import { db } from "../firebase";
 import {
@@ -52,8 +52,7 @@ type WorkoutExerciseRow = {
 type WorkoutSection = {
   id: string;
   title: string;
-  exerciseOptions: string[];
-  exercises: WorkoutExerciseRow[];
+  content: string;
 };
 
 type SignupItem = {
@@ -286,45 +285,55 @@ const initialLeadershipRoles: LeadershipRole[] = [
   },
 ];
 
-const createEmptyWorkoutExercise = (): WorkoutExerciseRow => ({
-  id: createId(),
-  name: "",
-  details: "",
-});
+const formatWorkoutSectionContentFromExercises = (exercises: WorkoutExerciseRow[]) =>
+  exercises
+    .map((exercise) => {
+      const name = String(exercise.name ?? "").trim();
+      const details = String(exercise.details ?? "").trim();
 
-const isCustomWorkoutExerciseName = (name: string, options: string[]) =>
-  Boolean(name) && !options.includes(name);
+      if (!name && !details) return "";
+      if (name && details) return `• ${name}: ${details}`;
+      return `• ${name || details}`;
+    })
+    .filter(Boolean)
+    .join("\n");
+
+const workoutSectionPlaceholder = `Use free text or bullets.
+- Exercise 1
+- Exercise 2
+- Notes / reps / rotation`;
+
+const getWorkoutSectionRows = (content: string) => {
+  const source = content.trim() ? content : workoutSectionPlaceholder;
+  const lineCount = source.split("\n").length;
+  return Math.min(Math.max(lineCount + 1, 5), 14);
+};
 
 const initialWorkoutPlan: WorkoutSection[] = [
   {
     id: "warm-up",
     title: "Warm-Up",
-    exerciseOptions: WARMUP_EXERCISES,
-    exercises: [createEmptyWorkoutExercise()],
+    content: "",
   },
   {
     id: "station-1",
     title: "Station 1",
-    exerciseOptions: THANG_EXERCISES,
-    exercises: [createEmptyWorkoutExercise()],
+    content: "",
   },
   {
     id: "station-2",
     title: "Station 2",
-    exerciseOptions: THANG_EXERCISES,
-    exercises: [createEmptyWorkoutExercise()],
+    content: "",
   },
   {
     id: "station-3",
     title: "Station 3",
-    exerciseOptions: THANG_EXERCISES,
-    exercises: [createEmptyWorkoutExercise()],
+    content: "",
   },
   {
     id: "station-4",
     title: "Station 4",
-    exerciseOptions: THANG_EXERCISES,
-    exercises: [createEmptyWorkoutExercise()],
+    content: "",
   },
 ];
 
@@ -479,17 +488,9 @@ const ensureSharedPlannerSeed = async () => {
     initialWorkoutPlan.forEach((section, sectionIndex) => {
       transaction.set(doc(getWorkoutSectionsCollection(), section.id), {
         title: section.title,
-        exerciseOptions: section.exerciseOptions,
+        content: section.content,
         order: sectionIndex,
         updatedAt: serverTimestamp(),
-      });
-
-      section.exercises.forEach((exercise, exerciseIndex) => {
-        transaction.set(doc(getWorkoutExercisesCollection(section.id), exercise.id), {
-          ...exercise,
-          order: exerciseIndex,
-          updatedAt: serverTimestamp(),
-        });
       });
     });
 
@@ -741,23 +742,18 @@ export const EventPlannerMock: React.FC = () => {
         const sections = snapshot.docs.map((item) => {
           const data = item.data() as {
             title?: string;
-            exerciseOptions?: string[];
+            content?: string;
           };
 
           return {
             id: item.id,
             title: String(data.title ?? ""),
-            exerciseOptions: Array.isArray(data.exerciseOptions) ? data.exerciseOptions : [],
+            content: String(data.content ?? ""),
           };
         });
 
         setWorkoutSectionIds(sections.map((section) => section.id));
-        setWorkoutPlan((current) =>
-          sections.map((section) => ({
-            ...section,
-            exercises: current.find((entry) => entry.id === section.id)?.exercises ?? [],
-          }))
-        );
+        setWorkoutPlan(sections);
       },
       (error) => console.error("Workout sections listener failed:", error)
     );
@@ -781,11 +777,27 @@ export const EventPlannerMock: React.FC = () => {
             };
           });
 
+          const migratedContent = formatWorkoutSectionContentFromExercises(exercises);
+          if (!migratedContent) return;
+
           setWorkoutPlan((current) =>
             current.map((section) =>
-              section.id === sectionId ? { ...section, exercises } : section
+              section.id === sectionId && !section.content.trim()
+                ? { ...section, content: migratedContent }
+                : section
             )
           );
+
+          void setDoc(
+            doc(getWorkoutSectionsCollection(), sectionId),
+            {
+              content: migratedContent,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          ).catch((error) => {
+            console.error(`Failed to migrate workout section ${sectionId}:`, error);
+          });
         },
         (error) => console.error(`Workout exercises listener failed for ${sectionId}:`, error)
       )
@@ -1140,117 +1152,22 @@ export const EventPlannerMock: React.FC = () => {
     })();
   };
 
-  const addWorkoutExercise = (sectionId: string) => {
-    const nextExercise = createEmptyWorkoutExercise();
-    const section = workoutPlan.find((entry) => entry.id === sectionId);
-    const order = section ? getNextOrder(section.exercises) : 0;
-
-    setWorkoutPlan((current) =>
-      current.map((item) =>
-        item.id === sectionId
-          ? { ...item, exercises: [...item.exercises, nextExercise] }
-          : item
-      )
-    );
-
-    void setDoc(doc(getWorkoutExercisesCollection(sectionId), nextExercise.id), {
-      ...nextExercise,
-      order,
-      updatedAt: serverTimestamp(),
-    }).catch((error) => {
-      console.error(`Failed to add workout exercise for ${sectionId}:`, error);
-    });
-  };
-
-  const updateWorkoutExercise = (
-    sectionId: string,
-    exerciseId: string,
-    field: keyof WorkoutExerciseRow,
-    value: string
-  ) => {
+  const updateWorkoutSectionContent = (sectionId: string, value: string) => {
     setWorkoutPlan((current) =>
       current.map((section) =>
-        section.id === sectionId
-          ? {
-              ...section,
-              exercises: section.exercises.map((exercise) =>
-                exercise.id === exerciseId ? { ...exercise, [field]: value } : exercise
-              ),
-            }
-          : section
+        section.id === sectionId ? { ...section, content: value } : section
       )
     );
 
     void setDoc(
-      doc(getWorkoutExercisesCollection(sectionId), exerciseId),
+      doc(getWorkoutSectionsCollection(), sectionId),
       {
-        [field]: value,
+        content: value,
         updatedAt: serverTimestamp(),
       },
       { merge: true }
     ).catch((error) => {
-      console.error(`Failed to update workout exercise ${exerciseId}:`, error);
-    });
-  };
-
-  const removeWorkoutExercise = (sectionId: string, exerciseId: string) => {
-    const section = workoutPlan.find((entry) => entry.id === sectionId);
-    if (!section) return;
-
-    const remainingExercises = section.exercises.filter((exercise) => exercise.id !== exerciseId);
-
-    if (remainingExercises.length === 0) {
-      setWorkoutPlan((current) =>
-        current.map((item) =>
-          item.id === sectionId
-            ? {
-                ...item,
-                exercises: item.exercises.map((exercise) =>
-                  exercise.id === exerciseId ? { ...exercise, name: "", details: "" } : exercise
-                ),
-              }
-            : item
-        )
-      );
-
-      void setDoc(
-        doc(getWorkoutExercisesCollection(sectionId), exerciseId),
-        {
-          name: "",
-          details: "",
-          order: 0,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      ).catch((error) => {
-        console.error(`Failed to reset workout exercise ${exerciseId}:`, error);
-      });
-
-      return;
-    }
-
-    setWorkoutPlan((current) =>
-      current.map((item) =>
-        item.id === sectionId ? { ...item, exercises: remainingExercises } : item
-      )
-    );
-
-    void (async () => {
-      try {
-        await deleteDoc(doc(getWorkoutExercisesCollection(sectionId), exerciseId));
-
-        const batch = writeBatch(db);
-        remainingExercises.forEach((exercise, index) => {
-          batch.set(
-            doc(getWorkoutExercisesCollection(sectionId), exercise.id),
-            { order: index, updatedAt: serverTimestamp() },
-            { merge: true }
-          );
-        });
-        await batch.commit();
-      } catch (error) {
-        console.error(`Failed to remove workout exercise ${exerciseId}:`, error);
-      }
+      console.error(`Failed to update workout section ${sectionId}:`, error);
     })();
   };
 
@@ -1563,7 +1480,7 @@ export const EventPlannerMock: React.FC = () => {
           <div className="min-w-0 flex-1 pt-0.5 sm:flex sm:flex-col sm:items-center">
             <div className="flex min-w-0 items-baseline gap-2 sm:flex-col sm:items-center sm:gap-0.5">
               <h2 className="text-lg font-semibold text-white sm:text-xl">Workout Plan</h2>
-              <p className="min-w-0 text-sm text-slate-300">Exercises for each station.</p>
+              <p className="min-w-0 text-sm text-slate-300">Free-text plan for each station. Bullet points supported.</p>
             </div>
           </div>
         </div>
@@ -1574,100 +1491,17 @@ export const EventPlannerMock: React.FC = () => {
               <div className="flex items-center justify-between gap-3 border-b border-slate-700 px-2.5 py-2.5 sm:flex-col sm:items-center sm:justify-center sm:px-3">
                 <div className="flex min-w-0 items-center gap-2 sm:flex-col sm:text-center">
                   <h3 className="text-base font-semibold text-white">{section.title}</h3>
-                  {(() => {
-                    const exerciseCount = section.exercises.filter((exercise) => exercise.name).length;
-
-                    return (
-                      <div className="text-xs text-slate-400">
-                        {exerciseCount} {exerciseCount === 1 ? "Exercise" : "Exercises"}
-                      </div>
-                    );
-                  })()}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => addWorkoutExercise(section.id)}
-                  className="rounded-md border border-slate-600 bg-slate-900/70 px-2 py-1 text-xs text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
-                >
-                  Add Exercise
-                </button>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-[326px] min-w-[326px] table-fixed text-left sm:w-[458px] sm:min-w-[458px] lg:w-full lg:min-w-0">
-                  <tbody>
-                    {section.exercises.map((exercise, index) => (
-                      <tr
-                        key={exercise.id}
-                        className={`${index === 0 ? "" : "border-t border-slate-700"} align-top`}
-                      >
-                        <td className="w-[135px] min-w-[135px] max-w-[135px] px-1.5 py-2 pr-3 sm:w-[160px] sm:min-w-[160px] sm:max-w-[160px] sm:px-2 sm:pr-4 lg:w-[240px] lg:min-w-[240px] lg:max-w-[240px]">
-                          {isCustomWorkoutExerciseName(exercise.name, section.exerciseOptions) ? (
-                            <input
-                              value={exercise.name}
-                              onChange={(event) =>
-                                updateWorkoutExercise(
-                                  section.id,
-                                  exercise.id,
-                                  "name",
-                                  event.target.value
-                                )
-                              }
-                              className={`${compactInputClass} w-[135px] min-w-[135px] max-w-[135px] sm:w-[160px] sm:min-w-[160px] sm:max-w-[160px] lg:w-full lg:min-w-0 lg:max-w-none`}
-                              placeholder="Custom exercise"
-                            />
-                          ) : (
-                            <select
-                              value={exercise.name}
-                              onChange={(event) =>
-                                updateWorkoutExercise(
-                                  section.id,
-                                  exercise.id,
-                                  "name",
-                                  event.target.value === "__custom__" ? "Custom Exercise" : event.target.value
-                                )
-                              }
-                              className={`${compactInputClass} w-[135px] min-w-[135px] max-w-[135px] sm:w-[160px] sm:min-w-[160px] sm:max-w-[160px] lg:w-full lg:min-w-0 lg:max-w-none`}
-                            >
-                              <option value="">Select exercise</option>
-                              {section.exerciseOptions.map((name, index) => (
-                                <option key={`${section.id}-${name}-${index}`} value={name}>
-                                  {name}
-                                </option>
-                              ))}
-                              <option value="__custom__">Custom</option>
-                            </select>
-                          )}
-                        </td>
-                        <td className="w-[224px] min-w-[224px] max-w-[224px] px-1.5 py-2 pl-3 sm:w-[369px] sm:min-w-[369px] sm:max-w-[369px] sm:px-2 sm:pl-4 lg:w-auto lg:min-w-0 lg:max-w-none">
-                          <div className="flex items-center gap-2">
-                            <input
-                              value={exercise.details}
-                              onChange={(event) =>
-                                updateWorkoutExercise(
-                                  section.id,
-                                  exercise.id,
-                                  "details",
-                                  event.target.value
-                                )
-                              }
-                              className={`${compactInputClass} w-[188px] min-w-[188px] max-w-[188px] sm:w-[333px] sm:min-w-[333px] sm:max-w-[333px] lg:w-full lg:min-w-0 lg:max-w-none`}
-                              placeholder="Reps, IC, distance"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeWorkoutExercise(section.id, exercise.id)}
-                              aria-label="Remove exercise"
-                              className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center text-slate-500 transition-colors hover:text-red-500"
-                            >
-                              <TrashIcon />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="px-2.5 py-2.5 sm:px-3">
+                <textarea
+                  value={section.content}
+                  onChange={(event) => updateWorkoutSectionContent(section.id, event.target.value)}
+                  rows={getWorkoutSectionRows(section.content)}
+                  className={`${inputClass} resize-y`}
+                  placeholder={workoutSectionPlaceholder}
+                />
               </div>
             </div>
           ))}
