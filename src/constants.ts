@@ -158,47 +158,7 @@ export const getBandNameForF3Name = (name: string): string => {
   return mapped || clean;
 };
 
-const dedupePaxList = (lists: readonly (readonly string[])[]) => {
-  const seen = new Set<string>();
-  const combined: string[] = [];
-
-  for (const list of lists) {
-    for (const name of list) {
-      const clean = String(name || "").trim();
-      const key = clean.toLowerCase();
-      if (!clean || seen.has(key)) continue;
-      seen.add(key);
-      combined.push(clean);
-    }
-  }
-
-  return combined;
-};
-
-const getTemporaryCompassAnniversaryPaxList = () => {
-  const overrideLists = Object.values(paxDirectoryOverride?.paxByAo ?? {}).filter(
-    (list) => Array.isArray(list) && list.length
-  );
-
-  const staticLists = [
-    PAX_LIST,
-    PAX_LIST_COLOSSEUM,
-    PAX_LIST_JURASSICPARK,
-    PAX_LIST_THEHILL,
-    PAX_LIST_THESHADOWS,
-    PAX_LIST_GATORBAY,
-    PAX_LIST_PHOENIXRISING,
-    PAX_LIST_SMOAKEDGROVE,
-  ];
-
-  return dedupePaxList([...overrideLists, ...staticLists]);
-};
-
 export const getPaxListByAo = (aoId: AoIdLite): readonly string[] => {
-  // TEMP: Compass anniversary run. Allow Compass to select any listed PAX,
-  // regardless of AO. Back this out after the local anniversary post is done.
-  if (aoId === "compass") return getTemporaryCompassAnniversaryPaxList();
-
   const override = paxDirectoryOverride?.paxByAo?.[aoId];
   if (override && override.length) return override;
 
@@ -217,6 +177,7 @@ export const getPaxListByAo = (aoId: AoIdLite): readonly string[] => {
       return PAX_LIST_PHOENIXRISING;
     case "smoakedgrove":
       return PAX_LIST_SMOAKEDGROVE;
+    case "compass":
     default:
       return PAX_LIST;
   }
